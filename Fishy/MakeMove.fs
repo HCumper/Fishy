@@ -43,7 +43,7 @@ let parseMove (move: string) : int * int * int * int * Piece option =
         | 'e' -> 5
         | 'f' -> 6
         | 'g' -> 7
-        | 'h' -> 8
+        | _ -> 8
 
     let convertLetterToPiece letter =
         match letter with
@@ -51,6 +51,7 @@ let parseMove (move: string) : int * int * int * int * Piece option =
         | 'r' -> Rook
         | 'b' -> Bishop
         | 'n' -> Knight
+        | _ -> Pawn
 
     let promoteTo =
         if move.Length = 5 then Some (convertLetterToPiece move[4]) else None

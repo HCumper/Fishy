@@ -1,4 +1,4 @@
-﻿module Fishy.FENParser
+﻿module FENParser
 
 open Types
 open Chess
