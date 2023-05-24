@@ -33,6 +33,5 @@ type OtherState =
       BlackQRMoved: bool
       BlackKRMoved: bool
       EPSquare: Coordinates option
-      JustCaptured: bool
       PromoteTo: Piece option
       ToPlay: Color }

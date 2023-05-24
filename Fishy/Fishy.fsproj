@@ -9,7 +9,11 @@
         <Compile Include="Types.fs" />
         <Compile Include="GenerateMoves.fs" />
         <Compile Include="Program.fs" />
+        <Compile Include="MakeMove.fs" />
+        <Compile Include="FENParser.fs" />
         <Compile Include="Tests.fs" />
+        <Compile Include="Logger.fs" />
+        <Compile Include="UCI.fs" />
     </ItemGroup>
 
 </Project>
