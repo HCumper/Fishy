@@ -2,7 +2,7 @@
 
 open Types
 open GenerateMoves
-let board = Array2D.createBased 1 1 8 8 (None)
+let board = Array2D.createBased 1 1 8 8 None
 
 let setupStartingPosition () =
     // Setting up the white pieces
@@ -11,11 +11,11 @@ let setupStartingPosition () =
     board[3, 1] <- Some (Bishop, White)
     board[4, 1] <- Some (Queen, White)
     board[5, 1] <- Some (King, White)
-    board[6, 1] <- Some (Bishop, White)
-    board[7, 1] <- Some (Knight, White)
+//    board[6, 1] <- Some (Bishop, White)
+//    board[7, 1] <- Some (Knight, White)
     board[8, 1] <- Some (Rook, White)
 
-    //for file in 1..8 do board[file, 2] <- Some (Pawn, White)
+    for file in 1..8 do board[file, 2] <- Some (Pawn, White)
 
     // Setting up the black pieces
     board[1, 7] <- Some (Rook, Black)

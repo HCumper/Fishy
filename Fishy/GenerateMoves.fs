@@ -2,16 +2,20 @@
 
 open Types
 
-let isSquareOnBoard (coordinates: int * int) =
-    fst coordinates >= 1
-    && fst coordinates <= 8
-    && snd coordinates >= 1
-    && snd coordinates <= 8
+let private convertToMove fromFile fromRank toFile toRank promoteTo : Move = ((fromFile, fromRank), (toFile, toRank), promoteTo)
+let private isSquareOnBoard (file, rank) = file >= 1 && file <= 8 && rank >= 1 && rank <= 8
 
-let isSquareEmptyOrOpponentPiece (board: Board) movingColor coordinates =
+let private isSquareEmptyOrOpponentPiece (board: Board) movingColor coordinates =
     match board[fst coordinates, snd coordinates] with
     | None -> true
     | Some (_, color) -> color <> movingColor
+
+let private isSquareOpponentPiece (board: Board) movingColor coordinates =
+    match board[fst coordinates, snd coordinates] with
+    | None -> false
+    | Some (_, color) -> color <> movingColor
+
+let private isSquareEmpty (board: Board) (file, rank) : bool = board[file, rank] = None
 
 // the generatePawnMoves function now includes support for en passant captures. The function takes an additional parameter enPassantTarget, which represents the square where an en passant capture is possible.
 //
@@ -21,19 +25,99 @@ let isSquareEmptyOrOpponentPiece (board: Board) movingColor coordinates =
 //
 // Please ensure that you provide the correct enPassantTarget value based on the game state to generate the valid en passant capture moves.
 //
-// let generatePawnMoves (board: Board) (pieceColor: Color) (coordinates: Coordinates) (enPassantTarget: Coordinates option) : Coordinates list =
-//     let (x, y) = coordinates
-//     let (_, squareColor) = board.[x, y]
-//     let forwardOffset = if pieceColor = White then 1 else -1
-//
-//     let isValidSquare (x: int, y: int) : bool =
-//         x >= 1 && x <= 8 && y >= 1 && y <= 8
-//
-//     let isSquareEmpty (x: int, y: int) : bool =
-//         match board.[x, y] with
-//         | (None, _) -> true
-//         | _ -> false
-//
+
+// can move into check
+let generateKingMoves board (gameState: OtherState) (file, rank) =
+    let directions = [(1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1)]
+    let mutable (kingMoves: Move list) = []
+
+    // ordinary king moves
+    let isOppositionAllows (deltaFile, deltaRank) : bool =
+        if isSquareEmptyOrOpponentPiece board gameState.ToPlay (deltaFile, deltaRank) then
+            let availableDirections = List.filter (fun x -> isSquareOnBoard ((fst x) + deltaFile, (snd x) + deltaRank)) directions
+            not (List.exists (fun x -> board[(fst x) + deltaFile, (snd x) + deltaRank] = Some (King, Black)) availableDirections)
+        else
+            false
+
+    kingMoves <- directions
+        |> List.map (fun (x,y) -> (x + file, y + rank))
+        |> List.filter isSquareOnBoard
+        |> List.filter (isSquareEmptyOrOpponentPiece board gameState.ToPlay)
+        |> List.filter isOppositionAllows
+        |> List.map (fun x -> ((file, rank), x, None))
+
+    // castling
+    if gameState.ToPlay = White then
+        if not gameState.WhiteKingMoved then
+            if not gameState.WhiteKRMoved then
+                if board[6, 1] = None && board[7, 1] = None then
+                    kingMoves <- convertToMove 5 1 7 1 None :: kingMoves
+
+            if not gameState.WhiteQRMoved then
+                if board[4, 1] = None && board[3, 1] = None && board[2, 1] = None then
+                    kingMoves <- convertToMove 5 1 3 1 None :: kingMoves
+    else
+        if not gameState.BlackKingMoved then
+            if not gameState.BlackKRMoved then
+                if board[6, 1] = None && board[7, 1] = None then
+                    kingMoves <- convertToMove 5 1 7 1 None :: kingMoves
+
+            if not gameState.BlackQRMoved then
+                if board[4, 1] = None && board[3, 1] = None && board[2, 1] = None then
+                    kingMoves <- convertToMove 5 1 3 1 None :: kingMoves
+
+    kingMoves
+
+let generatePawnMoves board (gameState: OtherState) (file, rank) =
+    let direction = if gameState.ToPlay = Black then -1 else 1
+
+    let singleAdvanceMoves =
+        if isSquareOnBoard (file, rank + direction) && isSquareEmpty board (file, rank + direction) then
+            if rank + direction = 1 || rank + direction = 8 then
+                [convertToMove file rank file (rank + direction) (Some Queen);
+                 convertToMove file rank file (rank + direction) (Some Rook);
+                 convertToMove file rank file (rank + direction) (Some Bishop);
+                 convertToMove file rank file (rank + direction) (Some Knight)]
+            else
+                [convertToMove file rank file (rank + direction) None]
+        else
+            []
+
+    let ordinaryCaptureMoves =
+        let leftCapture =
+            if isSquareOnBoard (file - 1, rank + direction) && isSquareOpponentPiece board gameState.ToPlay (file - 1, rank + direction) then
+                [convertToMove file rank (file - 1) (rank + direction) None]
+            else
+                []
+        let rightCapture =
+            if isSquareOnBoard (file + 1, rank + direction) && isSquareOpponentPiece board gameState.ToPlay (file + 1, rank + direction) then
+                [convertToMove file rank (file + 1) (rank + direction) None]
+            else
+                []
+        leftCapture @ rightCapture
+
+    let epCaptureMoves =
+        let epLeftCapture =
+            if isSquareOnBoard (file, rank + direction) && gameState.EPSquare = Some (file - 1, rank) then
+                [convertToMove file rank (file - 1) (rank + direction) None]
+            else
+                []
+        let epRightCapture =
+            if isSquareOnBoard (file, rank + direction) && gameState.EPSquare = Some (file + 1, rank) then
+                [convertToMove file rank (file + 1) (rank + direction) None]
+            else
+                []
+        epLeftCapture @ epRightCapture
+
+    let doubleAdvanceMove =
+        if isSquareOnBoard (file, rank + direction) && isSquareEmpty board (file, rank + direction) &&
+           isSquareOnBoard (file, rank + direction * 2) && isSquareEmpty board (file, rank + direction * 2) then
+            [convertToMove file rank file (rank + direction * 2) None]
+        else
+            []
+
+    singleAdvanceMoves @ ordinaryCaptureMoves @ epCaptureMoves @ doubleAdvanceMove
+
 //     let isOpponentPiece (x: int, y: int) : bool =
 //         match board.[x, y] with
 //         | (_, Some color) -> color <> pieceColor
@@ -100,7 +184,7 @@ let isSquareEmptyOrOpponentPiece (board: Board) movingColor coordinates =
 // let enPassantTarget = Some (3, 4)
 // let allPawnMoves = generateAllPawnMoves board White enPassantTarget
 //
-let generateKnightMoves (board: Board) gameState (file, rank) : Move list =
+let generateKnightMoves board gameState (file, rank) : Move list =
     [ (file + 2, rank + 1)
       (file + 2, rank - 1)
       (file - 2, rank + 1)
@@ -111,41 +195,18 @@ let generateKnightMoves (board: Board) gameState (file, rank) : Move list =
       (file - 1, rank - 2) ]
     |> List.filter isSquareOnBoard
     |> List.filter (isSquareEmptyOrOpponentPiece board gameState.ToPlay)
-    |> List.map (fun x -> ((file, rank), x))
+    |> List.map (fun x -> ((file, rank), x, None))
 
-let generateBishopMoves board gameState (file, rank): Move list =
-    let directions = [ (1, 1); (1, -1); (-1, 1); (-1, -1) ]
+let generateVectorMoves board gameState (file, rank) directions =
 
-    // generate all moves in a direction
-    let generateMoves deltaFile deltaRank =
-        let rec loop file rank moves =
-            let nFile = file + deltaFile
-            let nRank = rank + deltaRank
+    let generateMoves deltaFile deltaRank : Move list =
+        let rec loop newFile newRank (moves: Move list) : Move list =
+            let nFile = newFile + deltaFile
+            let nRank = newRank + deltaRank
 
             if isSquareOnBoard (nFile, nRank) && isSquareEmptyOrOpponentPiece board gameState.ToPlay (nFile, nRank) then
-                let updatedMoves = (nFile, nRank) :: moves
-                loop nFile nRank updatedMoves
-            else
-                moves
-
-        loop file rank []
-
-    List.collect (fun (deltaFile, deltaRank) -> generateMoves deltaFile deltaRank) directions
-    |> List.map (fun (newSquare) -> ((file, rank), newSquare))
-
-let generateRookMoves board gameState (file, rank): Move list =
-    let directions = [ (1, 0); (-1, 0); (0, 1); (0, -1) ]
-
-    // generate all moves in a direction
-    let generateMoves deltaFile deltaRank =
-        let rec loop file rank moves =
-            let nFile = file + deltaFile
-            let nRank = rank + deltaRank
-
-            if isSquareOnBoard (nFile, nRank) && isSquareEmptyOrOpponentPiece board gameState.ToPlay (nFile, nRank) then
-                let updatedMoves = (nFile, nRank) :: moves
-                if board[nFile, nRank] = None
-                then
+                let updatedMoves = (convertToMove file rank nFile nRank None) :: moves
+                if board[nFile, nRank] = None then
                     loop nFile nRank updatedMoves
                 else
                     updatedMoves
@@ -155,161 +216,7 @@ let generateRookMoves board gameState (file, rank): Move list =
         loop file rank []
 
     List.collect (fun (deltaFile, deltaRank) -> generateMoves deltaFile deltaRank) directions
-    |> List.map (fun (newSquare) -> ((file, rank), newSquare))
 
-// let bishopMoves = generateBishopMoves board White (4, 4)
-//
-// // In this generateBishopMoves function, we take the board, pieceColor, and coordinates of the bishop as input parameters. The function calculates the possible bishop moves based on the bishop's current position.
-// //
-// // The isValidSquare function ensures that the generated move is within the chessboard's boundaries. The isSquareEmptyOrOpponentPiece function checks if the destination square is either empty or contains an opponent's piece.
-// //
-// // The generateMoves function takes the direction values (dx, dy) as input and generates all possible moves in that direction. It uses a recursive loop to continue generating moves along the diagonal until it reaches an invalid square or encounters an occupied square.
-// //
-// // The directions list contains the four diagonal directions, and List.collect is used to generate moves for each direction and flatten the resulting lists into a single list of moves.
-// //
-// // The generated bishop moves are returned as a list.
-// //
-// // Please note that you need to provide the board, pieceColor, and coordinates values suitable for your specific game state.
-// let generateBishopMoves (board: Board) (pieceColor: Color) (coordinates: Coordinates) : Coordinates list =
-//     let (x, y) = coordinates
-//
-//     let isValidSquare (x: int, y: int) : bool =
-//         x >= 1 && x <= 8 && y >= 1 && y <= 8
-//
-//     let isSquareEmptyOrOpponentPiece (x: int, y: int) : bool =
-//         match board.[x, y] with
-//         | (None, _) -> true
-//         | (_, Some color) -> color <> pieceColor
-//         | _ -> false
-//
-//     let generateMoves (dx: int) (dy: int) : Coordinates list =
-//         let rec loop (x: int) (y: int) (moves: Coordinates list) =
-//             let nx = x + dx
-//             let ny = y + dy
-//
-//             if isValidSquare nx ny then
-//                 if isSquareEmptyOrOpponentPiece nx ny then
-//                     let updatedMoves = (nx, ny) :: moves
-//                     loop nx ny updatedMoves
-//                 else
-//                     moves
-//             else
-//                 moves
-//
-//         loop x y []
-//
-//     let directions =
-//         [ (1, 1)
-//           (1, -1)
-//           (-1, 1)
-//           (-1, -1) ]
-//
-//     directions
-//     |> List.collect (fun (dx, dy) -> generateMoves dx dy)
-//
-// let bishopMoves = generateBishopMoves board White (4, 4)
-//
-//
-// Certainly! Here's a function that generates rook moves for a given rook piece on a chessboard:
-//
-// fsharp
-//
-// let generateRookMoves (board: Board) (pieceColor: Color) (coordinates: Coordinates) : Coordinates list =
-//     let (x, y) = coordinates
-//
-//     let isValidSquare (x: int, y: int) : bool =
-//         x >= 1 && x <= 8 && y >= 1 && y <= 8
-//
-//     let isSquareEmptyOrOpponentPiece (x: int, y: int) : bool =
-//         match board.[x, y] with
-//         | (None, _) -> true
-//         | (_, Some color) -> color <> pieceColor
-//         | _ -> false
-//
-//     let generateMoves (dx: int) (dy: int) : Coordinates list =
-//         let rec loop (x: int) (y: int) (moves: Coordinates list) =
-//             let nx = x + dx
-//             let ny = y + dy
-//
-//             if isValidSquare nx ny then
-//                 if isSquareEmptyOrOpponentPiece nx ny then
-//                     let updatedMoves = (nx, ny) :: moves
-//                     loop nx ny updatedMoves
-//                 else
-//                     moves
-//             else
-//                 moves
-//
-//         loop x y []
-//
-//     let directions =
-//         [ (1, 0)
-//           (0, 1)
-//           (-1, 0)
-//           (0, -1) ]
-//
-//     directions
-//     |> List.collect (fun (dx, dy) -> generateMoves dx dy)
-//
-// let rookMoves = generateRookMoves board White (4, 4)
-//
-// // In this generateRookMoves function, we take the board, pieceColor, and coordinates of the rook as input parameters. The function calculates the possible rook moves based on the rook's current position.
-// //
-// // The isValidSquare function ensures that the generated move is within the chessboard's boundaries. The isSquareEmptyOrOpponentPiece function checks if the destination square is either empty or contains an opponent's piece.
-// //
-// // The generateMoves function takes the direction values (dx, dy) as input and generates all possible moves in that direction. It uses a recursive loop to continue generating moves along the rank or file until it reaches an invalid square or encounters an occupied square.
-// //
-// // The directions list contains the four directions (up, right, down, left), and List.collect is used to generate moves for each direction and flatten the resulting lists into a single list of moves.
-// //
-// // The generated rook moves are returned as a list.
-// //
-// // Please note that you need to provide the board, pieceColor, and coordinates values suitable for your specific game state.
-//
-// let generateRookMoves (board: Board) (pieceColor: Color) (coordinates: Coordinates) : Coordinates list =
-//     let (x, y) = coordinates
-//
-//     let isValidSquare (x: int, y: int) : bool =
-//         x >= 1 && x <= 8 && y >= 1 && y <= 8
-//
-//     let isSquareEmptyOrOpponentPiece (x: int, y: int) : bool =
-//         match board.[x, y] with
-//         | (None, _) -> true
-//         | (_, Some color) -> color <> pieceColor
-//         | _ -> false
-//
-//     let generateMoves (dx: int) (dy: int) : Coordinates list =
-//         let rec loop (x: int) (y: int) (moves: Coordinates list) =
-//             let nx = x + dx
-//             let ny = y + dy
-//
-//             if isValidSquare nx ny then
-//                 if isSquareEmptyOrOpponentPiece nx ny then
-//                     let updatedMoves = (nx, ny) :: moves
-//                     loop nx ny updatedMoves
-//                 else
-//                     moves
-//             else
-//                 moves
-//
-//         loop x y []
-//
-//     let directions =
-//         [ (1, 0)
-//           (0, 1)
-//           (-1, 0)
-//           (0, -1) ]
-//
-//     directions
-//     |> List.collect (fun (dx, dy) -> generateMoves dx dy)
-//
-// let rookMoves = generateRookMoves board White (4, 4)
-//
-// let generateQueenMoves (board: Board) (pieceColor: Color) (coordinates: Coordinates) : Coordinates list =
-//     let bishopMoves = generateBishopMoves board pieceColor coordinates
-//     let rookMoves = generateRookMoves board pieceColor coordinates
-//     bishopMoves @ rookMoves
-//
-// let queenMoves = generateQueenMoves board White (4, 4)
 //
 // //  generateKingMoves function, we added the logic for castling moves.
 // //
@@ -394,19 +301,18 @@ let generateMoves (board: Board) (gameState: OtherState) : Move list =
 
     for rank = 1 to 8 do
         for file = 1 to 8 do
-            availableMoves <- availableMoves
-            @ match board[file, rank] with
-              | None -> []
-              | Some (piece, color) ->
-                  match color with
-                  | x when x = gameState.ToPlay ->
-                      match piece with
-                      | Knight -> generateKnightMoves board gameState (file, rank)
-                      | Bishop -> generateBishopMoves board gameState (file, rank)
-                      | Rook -> generateRookMoves board gameState (file, rank)
-                      | Queen -> generateBishopMoves board gameState (file, rank) @ generateRookMoves board gameState (file, rank)
-                      | Pawn -> []
-                      | King -> []
-                  | _ -> []
+            match board[file, rank] with
+            | Some (piece, color) when color = gameState.ToPlay ->
+                let pieceMoves =
+                    match piece with
+                    | Knight -> generateKnightMoves board gameState (file, rank)
+                    | Bishop -> generateVectorMoves board gameState (file, rank) [(1, 1); (1, -1); (-1, 1); (-1, -1)]
+                    | Rook -> generateVectorMoves board gameState (file, rank) [(1, 0); (-1, 0); (0, 1); (0, -1)]
+                    | Queen -> generateVectorMoves board gameState (file, rank) [(1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1)]
+                    | Pawn -> generatePawnMoves board gameState (file, rank)
+                    | King -> generateKingMoves board gameState (file, rank)
+
+                availableMoves <- pieceMoves @ availableMoves
+            | _ -> ()
 
     availableMoves
