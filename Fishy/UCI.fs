@@ -6,6 +6,8 @@ open Logger
 open Chess
 open MakeMove
 open FENParser
+open Evaluation
+
 let engine = "Fishy"
 let version = "0.1"
 
@@ -15,26 +17,26 @@ let quit = false
 
 let logWriter = UCILogger()
 
-let convertNumbersToCoordinates ((fromFile, fromRank), (toFile, toRank), promoteTo) =
-    let files = "abcdefgh"
-    let ranks = "12345678"
-    let fileChar1 = files.[fromFile - 1]
-    let rankChar1 = ranks.[fromRank - 1]
-    let fileChar2 = files.[toFile - 1]
-    let rankChar2 = ranks.[toRank - 1]
-    sprintf "%c%c%c%c" fileChar1 rankChar1 fileChar2 rankChar2
-
 let output (text: string) =
     Console.WriteLine text
     logWriter.makeLogEntry "Outgoing " text
     ()
+
+let convertNumbersToCoordinates ((fromFile, fromRank), (toFile, toRank), promoteTo) =
+    let files = " abcdefgh"
+    let ranks = " 12345678"
+    let fileChar1 = files.[fromFile]
+    let rankChar1 = ranks.[fromRank]
+    let fileChar2 = files.[toFile]
+    let rankChar2 = ranks.[toRank]
+    sprintf "%c%c%c%c" fileChar1 rankChar1 fileChar2 rankChar2
 
 let startGame (cmd: string) =
     let cmdList = cmd.Split [|' '|]
     if cmdList[1] = "startpos" then
         parseFEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" |> ignore
 
-        output ("info string Position set to the starting position")
+        output "info string Position set to the starting position"
         if cmdList.Length > 2 && cmdList[2] = "moves" then
             let moves = Array.skip 3 cmdList
             Array.iter parseAndMakeMove moves
@@ -49,8 +51,11 @@ let rec processCommand () =
 
     match cmd with
     | cmd when cmd[0..1] = "go" ->
-        let move = engineMove () |> List.head |> convertNumbersToCoordinates
-        output ($"bestmove {move}")
+        let moves = engineMove ()
+        let moves2 = moves |> List.head
+        let finalMove = moves2 |> convertNumbersToCoordinates
+        let eval = evaluate board currentState
+        output ($"bestmove {finalMove}")
     | cmd when cmd[0..9] = "ucinewgame" -> ()
     | cmd when cmd[0..7] = "position" -> startGame cmd
     | cmd when cmd[0..8] = "startpos " -> ()
@@ -64,6 +69,7 @@ let rec processCommand () =
         output ("id author Hugh Cumper")
         output ("option:")
         output ("uciok")
+        initializePlacementValues ()
     | cmd when cmd[0..6] = "isready" -> output ("readyok")
     | cmd when cmd[0..3] = "quit" ->
             logWriter.makeLogEntry "Outgoing " "quitting"

@@ -13,7 +13,7 @@ let makeMove fromFile fromRank toFile toRank promoteTo =
     let epSquare =
         if board[toFile, toRank] = None then None else Some (toFile, fromRank)
 
-    let currentState =
+    let updatedState =
         { currentState with
             WhiteKingMoved = pieceMoving = Some (King, White)
             WhiteKRMoved = (pieceMoving = Some (Rook, White)) && fromFile = 8 && fromRank = 1
@@ -24,6 +24,7 @@ let makeMove fromFile fromRank toFile toRank promoteTo =
             ToPlay = if snd pieceMoving.Value = White then Black else White
             PromoteTo = promoteTo
             EPSquare = epSquare }
+    currentState <- updatedState
 
     board[toFile, toRank] <- if promoteTo <> None then
                                 Some (promoteTo.Value, (snd board[fromFile, fromRank].Value))

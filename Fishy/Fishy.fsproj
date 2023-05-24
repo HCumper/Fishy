@@ -12,6 +12,7 @@
         <Compile Include="FENParser.fs" />
         <Compile Include="MakeMove.fs" />
         <Compile Include="Logger.fs" />
+        <Compile Include="Evaluation.fs" />
         <Compile Include="UCI.fs" />
     </ItemGroup>
 
