@@ -14,6 +14,7 @@
         <Compile Include="Logger.fs" />
         <Compile Include="Evaluation.fs" />
         <Compile Include="UCI.fs" />
+        <Compile Include="LookAhead.fs" />
     </ItemGroup>
 
 </Project>

@@ -28,13 +28,13 @@ let parseFEN (fen: string) =
             | _ when c >= '1' && c <= '8' ->
                 let numEmptySquares = int(c) - int('0')
                 for i in 1 .. numEmptySquares do
-                    board.[file + i - 1, rank] <- None
+                    board[file + i - 1, rank] <- None
                 file <- file + numEmptySquares
             | _ -> board[file, rank] <- parsePiece c; file <- file + 1
         board
 
     let parts = fen.Split(' ')
-    let board = parseBoard parts.[0]
+    let board = parseBoard parts[0]
     board
 
 
@@ -57,7 +57,7 @@ let boardToFen (board: Board) =
     for rank = 8 downto 1 do  // Iterate ranks in reverse order
         let mutable emptySquares = 0
         for file = 1 to 8 do
-            match board.[file, rank] with
+            match board[file, rank] with
             | Some (piece, color) ->
                 if emptySquares > 0 then
                     fen <- fen + string emptySquares  // Append number of empty squares

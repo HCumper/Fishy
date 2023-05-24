@@ -1,7 +1,6 @@
 ﻿module Fish.UCI
 
 open System
-open Types
 open Logger
 open Chess
 open MakeMove
@@ -25,11 +24,11 @@ let output (text: string) =
 let convertNumbersToCoordinates ((fromFile, fromRank), (toFile, toRank), promoteTo) =
     let files = " abcdefgh"
     let ranks = " 12345678"
-    let fileChar1 = files.[fromFile]
-    let rankChar1 = ranks.[fromRank]
-    let fileChar2 = files.[toFile]
-    let rankChar2 = ranks.[toRank]
-    sprintf "%c%c%c%c" fileChar1 rankChar1 fileChar2 rankChar2
+    let fileChar1 = files[fromFile]
+    let rankChar1 = ranks[fromRank]
+    let fileChar2 = files[toFile]
+    let rankChar2 = ranks[toRank]
+    $"%c{fileChar1}%c{rankChar1}%c{fileChar2}%c{rankChar2}"
 
 let startGame (cmd: string) =
     let cmdList = cmd.Split [|' '|]
@@ -55,7 +54,7 @@ let rec processCommand () =
         let moves2 = moves |> List.head
         let finalMove = moves2 |> convertNumbersToCoordinates
         let eval = evaluate board currentState
-        output ($"bestmove {finalMove}")
+        output $"bestmove {finalMove}"
     | cmd when cmd[0..9] = "ucinewgame" -> ()
     | cmd when cmd[0..7] = "position" -> startGame cmd
     | cmd when cmd[0..8] = "startpos " -> ()
@@ -66,11 +65,11 @@ let rec processCommand () =
     | "savefen" -> ()
     | cmd when cmd[0..2] = "uci" ->
         output ("id name " + engine)
-        output ("id author Hugh Cumper")
-        output ("option:")
-        output ("uciok")
+        output "id author Hugh Cumper"
+        output "option:"
+        output "uciok"
         initializePlacementValues ()
-    | cmd when cmd[0..6] = "isready" -> output ("readyok")
+    | cmd when cmd[0..6] = "isready" -> output "readyok"
     | cmd when cmd[0..3] = "quit" ->
             logWriter.makeLogEntry "Outgoing " "quitting"
     | cmd when cmd[0..3] = "stop" ->
