@@ -23,7 +23,14 @@ type Board = Square[,]
 // board is laid out column, row i.e. file, rank matching chess notation e4
 type Coordinates = int * int
 
-type Move = Coordinates * Coordinates * Piece option
+type Move =
+    { fromFile : int
+      fromRank : int
+      toFile : int
+      toRank : int
+      capturedPiece : Piece option
+      promoteTo : Piece option
+    }
 
 type OtherState =
     { WhiteKingMoved: bool
@@ -33,5 +40,5 @@ type OtherState =
       BlackQRMoved: bool
       BlackKRMoved: bool
       EPSquare: Coordinates option
-      PromoteTo: Piece option
-      ToPlay: Color }
+      ToPlay: Color
+    }

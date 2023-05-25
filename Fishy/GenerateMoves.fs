@@ -1,8 +1,23 @@
 ﻿module GenerateMoves
-
+open Chess
 open Types
 
-let private convertToMove fromFile fromRank toFile toRank promoteTo : Move = ((fromFile, fromRank), (toFile, toRank), promoteTo)
+let private convertToMove fromFile fromRank toFile toRank promoteTo capturedPiece : Move =
+    {
+        fromFile = fromFile
+        fromRank = fromRank
+        toFile = toFile
+        toRank = toRank
+        promoteTo = promoteTo
+        capturedPiece = capturedPiece
+    }
+
+let toPieceOption file rank =
+    if board[file, rank] = None then
+        None
+    else
+        Some (fst board[file, rank].Value)
+
 let private isSquareOnBoard (file, rank) = file >= 1 && file <= 8 && rank >= 1 && rank <= 8
 
 let private isSquareEmptyOrOpponentPiece (board: Board) movingColor coordinates =
@@ -10,7 +25,7 @@ let private isSquareEmptyOrOpponentPiece (board: Board) movingColor coordinates 
     | None -> true
     | Some (_, color) -> color <> movingColor
 
-let private isSquareOpponentPiece (board: Board) movingColor coordinates =
+let private isSquareOpponentPiece movingColor coordinates =
     match board[fst coordinates, snd coordinates] with
     | None -> false
     | Some (_, color) -> color <> movingColor
@@ -35,27 +50,27 @@ let generateKingMoves board (gameState: OtherState) (file, rank) =
         |> List.filter isSquareOnBoard
         |> List.filter (isSquareEmptyOrOpponentPiece board gameState.ToPlay)
         |> List.filter isOppositionAllows
-        |> List.map (fun x -> ((file, rank), x, None))
+        |> List.map ( fun x -> convertToMove file rank (fst x) (snd x) None (toPieceOption (fst x) (snd x)))
 
     // castling
     if gameState.ToPlay = White then
         if not gameState.WhiteKingMoved then
             if not gameState.WhiteKRMoved then
                 if board[6, 1] = None && board[7, 1] = None then
-                    kingMoves <- convertToMove 5 1 7 1 None :: kingMoves
+                    kingMoves <- convertToMove 5 1 7 1 None None:: kingMoves
 
             if not gameState.WhiteQRMoved then
                 if board[4, 1] = None && board[3, 1] = None && board[2, 1] = None then
-                    kingMoves <- convertToMove 5 1 3 1 None :: kingMoves
+                    kingMoves <- convertToMove 5 1 3 1 None None:: kingMoves
     else
         if not gameState.BlackKingMoved then
             if not gameState.BlackKRMoved then
                 if board[6, 1] = None && board[7, 1] = None then
-                    kingMoves <- convertToMove 5 1 7 1 None :: kingMoves
+                    kingMoves <- convertToMove 5 1 7 1 None None :: kingMoves
 
             if not gameState.BlackQRMoved then
                 if board[4, 1] = None && board[3, 1] = None && board[2, 1] = None then
-                    kingMoves <- convertToMove 5 1 3 1 None :: kingMoves
+                    kingMoves <- convertToMove 5 1 3 1 None None:: kingMoves
 
     kingMoves
 

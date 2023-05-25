@@ -7,8 +7,8 @@
 
     <ItemGroup>
         <Compile Include="Types.fs" />
-        <Compile Include="GenerateMoves.fs" />
         <Compile Include="Program.fs" />
+        <Compile Include="GenerateMoves.fs" />
         <Compile Include="FENParser.fs" />
         <Compile Include="MakeMove.fs" />
         <Compile Include="Logger.fs" />
