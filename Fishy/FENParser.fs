@@ -1,23 +1,24 @@
 ﻿module FENParser
 
 open Types
-open Chess
+open Fishy
+
 let parseFEN (fen: string) =
     let parsePiece c =
         match c with
-        | 'k' -> Some (King, Black)
-        | 'q' -> Some (Queen, Black)
-        | 'r' -> Some (Rook, Black)
-        | 'b' -> Some (Bishop, Black)
-        | 'n' -> Some (Knight, Black)
-        | 'p' -> Some (Pawn, Black)
-        | 'K' -> Some (King, White)
-        | 'Q' -> Some (Queen, White)
-        | 'R' -> Some (Rook, White)
-        | 'B' -> Some (Bishop, White)
-        | 'N' -> Some (Knight, White)
-        | 'P' -> Some (Pawn, White)
-        | _ -> None
+        | 'k' -> BlackKing
+        | 'q' -> BlackQueen
+        | 'r' -> BlackRook
+        | 'b' -> BlackBishop
+        | 'n' -> BlackKnight
+        | 'p' -> BlackPawn
+        | 'K' -> WhiteKing
+        | 'Q' -> WhiteQueen
+        | 'R' -> WhiteRook
+        | 'B' -> WhiteBishop
+        | 'N' -> WhiteKnight
+        | 'P' -> WhitePawn
+        | _ -> Empty
 
     let parseBoard boardStr =
         let mutable rank = 8
@@ -28,26 +29,24 @@ let parseFEN (fen: string) =
             | _ when c >= '1' && c <= '8' ->
                 let numEmptySquares = int(c) - int('0')
                 for i in 1 .. numEmptySquares do
-                    board[file + i - 1, rank] <- None
+                    currentBoard[file + i - 1, rank] <- Empty
                 file <- file + numEmptySquares
-            | _ -> board[file, rank] <- parsePiece c; file <- file + 1
-        board
+            | _ -> currentBoard[file, rank] <- parsePiece c; file <- file + 1
+        currentBoard
 
     let parts = fen.Split(' ')
-    let board = parseBoard parts[0]
-    board
+    parseBoard parts[0]
 
-
-let pieceToChar (piece: Piece) =
+let pieceToChar (piece: sbyte) =
     match piece with
-    | King -> 'K'
-    | Queen -> 'Q'
-    | Rook -> 'R'
-    | Bishop -> 'B'
-    | Knight -> 'N'
-    | Pawn -> 'P'
+    | WhiteKing -> 'K'
+    | WhiteQueen -> 'Q'
+    | WhiteRook -> 'R'
+    | WhiteBishop -> 'B'
+    | WhiteKnight -> 'N'
+    | WhitePawn -> 'P'
 
-let colorToChar (color: Color) =
+let colorToChar (color: sbyte) =
     match color with
     | White -> 'w'
     | Black -> 'b'
@@ -58,17 +57,18 @@ let boardToFen (board: Board) =
         let mutable emptySquares = 0
         for file = 1 to 8 do
             match board[file, rank] with
-            | Some (piece, color) ->
+            | Empty ->
+                emptySquares <- emptySquares + 1
+            | piece ->
                 if emptySquares > 0 then
                     fen <- fen + string emptySquares  // Append number of empty squares
                     emptySquares <- 0
-                let temp = string (pieceToChar piece)
-                if color = White then
+                let temp = string (pieceToChar (abs piece))
+                if piece > Empty then
                     fen <- fen + temp
                 else
                     fen <- fen + temp.ToLower()
-            | None ->
-                emptySquares <- emptySquares + 1
+
         if emptySquares > 0 then
             fen <- fen + string emptySquares  // Append number of empty squares
         if rank > 1 then

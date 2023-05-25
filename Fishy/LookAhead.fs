@@ -1,7 +1,7 @@
 ﻿module LookAhead
 
 open System
-
+open GenerateMoves
 type GameNode = { Value: int; Children: GameNode list }
 
 
@@ -16,7 +16,7 @@ let rec negascout board otherState depthLeft alpha beta (color: int) =
     let mutable isFirstChild = true
     let mutable break = false
 
-    for move in generateMoves board do
+    for move in generateMoves board otherState do
         if not break then
             makeMove (board, move)
 

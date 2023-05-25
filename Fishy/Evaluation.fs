@@ -1,7 +1,7 @@
 ﻿module Evaluation
 
+open Fishy
 open Types
-//open Microsoft.FSharp.Collections.Array2D
 
 [<Literal>]
 let pawnValue = 1000
@@ -112,36 +112,40 @@ let initializePlacementValues () =
             queenPlacementValues[file, rank] <- queenPlacementTable[file - 1, rank - 1]
             kingPlacementValues[file, rank] <- kingMiddlegamePlacementTable[file - 1, rank - 1]
 
-let private placementValue (board: (Piece * Color) option[,]) file rank =
-    let absValue =
-        match fst board[file, rank].Value with
-        | Pawn -> pawnPlacementValues[file, rank]
-        | Knight -> knightPlacementValues[file, rank]
-        | Bishop -> bishopPlacementValues[file, rank]
-        | Rook -> rookPlacementValues[file, rank]
-        | Queen -> queenPlacementValues[file, rank]
-        | _ -> 0
+let evaluate (board: sbyte[,]) otherState : int =
 
-    if snd board[file, rank].Value = White then absValue else absValue * -1
+    let placementValue (board: sbyte[,]) file rank =
+        let absValue =
+            match board[file, rank] with
+            | WhitePawn -> pawnPlacementValues[file, rank]
+            | WhiteKnight -> knightPlacementValues[file, rank]
+            | WhiteBishop -> bishopPlacementValues[file, rank]
+            | WhiteRook -> rookPlacementValues[file, rank]
+            | WhiteQueen -> queenPlacementValues[file, rank]
+            | _ -> 0
 
-let private pieceValue (pieceType, color) =
-    let absValue =
+        if board[file, rank] > Empty then absValue else absValue * -1
+
+    let pieceValue pieceType =
         match pieceType with
-        | Pawn -> pawnValue
-        | Knight -> knightValue
-        | Bishop -> bishopValue
-        | Rook -> rookValue
-        | Queen -> queenValue
+        | WhitePawn -> pawnValue
+        | WhiteKnight -> knightValue
+        | WhiteBishop -> bishopValue
+        | WhiteRook -> rookValue
+        | WhiteQueen -> queenValue
+        | BlackPawn -> pawnValue
+        | BlackKnight -> knightValue
+        | BlackBishop -> bishopValue
+        | BlackRook -> rookValue
+        | BlackQueen -> queenValue
         | _ -> 0
 
-    if color = White then absValue else absValue * -1
-
-let evaluate (board: (Piece * Color) option[,]) otherState : int =
+    // Evaluate body
     let mutable evaluation = 0
 
     for rank = 1 to 8 do
         for file = 1 to 8 do
-            if board[file, rank] <> None then
-                evaluation <- evaluation + pieceValue board[file, rank].Value + placementValue board file rank
+            if board[file, rank] <> Empty then
+                evaluation <- evaluation + pieceValue board[file, rank] + placementValue board file rank
 
     evaluation

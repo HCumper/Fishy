@@ -1,81 +1,95 @@
 ﻿module MakeMove
 
 open System
-open Chess
+open Fishy
 open Types
 
-let makeMove move currentState =
-    let pieceMoving = board[move.fromFile, move.toFile].Value
+let makeMove (board: sbyte[,]) move currentState =
 
-    let epSquare =
-        if board[move.toFile, move.toRank] = None then None else Some (move.toFile, move.fromRank)
+    let pieceMoving = board[move.fromFile, move.fromRank]
+
+    let isEp =
+        abs pieceMoving = WhitePawn && move.fromFile <> move.toFile && board[move.toFile, move.toRank] = Empty
 
     // capture field in move already populated by move generator
-    board[move.toFile, move.toRank] <-
-        if move.promoteTo = None then
-            if epSquare = None then
-                board[move.fromFile, move.fromRank]
-            else
-                // remove captured pawn
-                board[move.toFile, move.fromRank] = None
-                Some (Pawn, (snd board[move.fromFile, move.fromRank].Value))
+    if move.promoteTo = Empty then
+        if isEp  then
+            board[move.toFile, move.toRank] <- pieceMoving
+            board[move.toFile, move.fromRank] <- Empty
         else
-            Some (move.promoteTo.Value, (snd board[move.fromFile, move.fromRank].Value))
+            if abs pieceMoving = WhiteKing
+               && (abs (move.fromFile - move.toFile)) = 2
+               && (move.toFile = 7 && ((abs board[8, move.toRank]) = WhiteRook)
+                   || (move.toFile = 3 && ((abs board[1, move.toRank]) = WhiteRook))) then  // castling
+                if move.toFile = 7 then
+                    board[6, move.toRank] <- board[8, move.toRank]
+                    board[8, move.toRank] <- Empty
+                else
+                    board[4, move.toRank] <- board[1, move.toRank]
+                    board[1, move.toRank] <- Empty
 
-    board[move.fromFile, move.fromRank] <- None
+            board[move.toFile, move.toRank] <- pieceMoving
+    else
+        board[move.toFile, move.toRank] <- move.promoteTo
+
+    board[move.fromFile, move.fromRank] <- Empty
+
+    let epSquare =
+        if isEp then Some (move.toFile, move.fromRank) else None
 
     { currentState with
-        WhiteKingMoved = pieceMoving = (King, White)
-        WhiteKRMoved = (pieceMoving = (Rook, White)) && move.fromFile = 8 && move.fromRank = 1
-        WhiteQRMoved = ((pieceMoving = (Rook, White)) && move.fromFile = 1 && move.fromRank = 1)
-        BlackKingMoved = pieceMoving = (King, Black)
-        BlackKRMoved = (pieceMoving = (Rook, Black)) && move.fromFile = 8 && move.fromRank = 1
-        BlackQRMoved = ((pieceMoving = (Rook, Black)) && move.fromFile = 1 && move.fromRank = 1)
-        ToPlay = if snd pieceMoving = White then Black else White
+        WhiteKingMoved = pieceMoving = WhiteKing
+        WhiteKRMoved = (pieceMoving = WhiteRook) && move.fromFile = 8 && move.fromRank = 1
+        WhiteQRMoved = ((pieceMoving = WhiteRook) && move.fromFile = 1 && move.fromRank = 1)
+        BlackKingMoved = pieceMoving = BlackKing
+        BlackKRMoved = (pieceMoving = BlackRook) && move.fromFile = 8 && move.fromRank = 1
+        BlackQRMoved = ((pieceMoving = BlackRook) && move.fromFile = 1 && move.fromRank = 1)
+        ToPlay = -currentState.ToPlay
     }
 
-let parseMove (move: string) : int * int * int * int * Piece option =
-    let parseFile c =
-        match c with
-        | 'a' -> 1
-        | 'b' -> 2
-        | 'c' -> 3
-        | 'd' -> 4
-        | 'e' -> 5
-        | 'f' -> 6
-        | 'g' -> 7
-        | _ -> 8
+let parseAndMakeMove (board: sbyte[,]) (currentState: OtherState) strMove =
+    let parseMove (move: string) : int * int * int * int * sbyte =
+        let parseFile c =
+            match c with
+            | 'a' -> 1
+            | 'b' -> 2
+            | 'c' -> 3
+            | 'd' -> 4
+            | 'e' -> 5
+            | 'f' -> 6
+            | 'g' -> 7
+            | _ -> 8
 
-    let convertLetterToPiece letter =
-        match letter with
-        | 'q' -> Queen
-        | 'r' -> Rook
-        | 'b' -> Bishop
-        | 'n' -> Knight
-        | _ -> Pawn
+        let convertLetterToPiece letter =
+            match letter with
+            | 'q' -> WhiteQueen
+            | 'r' -> WhiteRook
+            | 'b' -> WhiteBishop
+            | 'n' -> WhiteKnight
+            | _ -> WhitePawn
 
-    let promoteTo =
-        if move.Length = 5 then Some (convertLetterToPiece move[4]) else None
+        let promoteTo =
+            if move.Length = 5 then convertLetterToPiece move[4] else Empty
 
-    parseFile move[0],
-    Int32.Parse (move[ 1 ].ToString ()),
-    parseFile move[2],
-    Int32.Parse (move[ 3 ].ToString ()),
-    promoteTo
+        parseFile move[0],
+        Int32.Parse (move[ 1 ].ToString ()),
+        parseFile move[2],
+        Int32.Parse (move[ 3 ].ToString ()),
+        promoteTo
 
-let parseAndMakeMove strMove currentState =
     let fromFile, fromRank, toFile, toRank, promoteTo = parseMove strMove
     let capturedPiece =
-        if board[toFile, toRank] = None then
-            None
+        if board[toFile, toRank] = Empty then
+            Empty
         else
-            Some (fst board[toFile, toRank].Value)
+           board[toFile, toRank]
+
     let move = {
         fromFile = fromFile
         fromRank = fromRank
         toFile = toFile
         toRank = toRank
-        promoteTo = promoteTo
         capturedPiece = capturedPiece
+        promoteTo = promoteTo
     }
-    makeMove move currentState
+    makeMove board move currentState

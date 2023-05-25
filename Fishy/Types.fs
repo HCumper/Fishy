@@ -11,14 +11,14 @@ type Piece =
     | Bishop
     | Knight
     | Pawn
+//
+// type Color =
+//     | White
+//     | Black
 
-type Color =
-    | White
-    | Black
+//type Square = (Piece * Color) option
 
-type Square = (Piece * Color) option
-
-type Board = Square[,]
+type Board = sbyte[,]
 
 // board is laid out column, row i.e. file, rank matching chess notation e4
 type Coordinates = int * int
@@ -28,8 +28,8 @@ type Move =
       fromRank : int
       toFile : int
       toRank : int
-      capturedPiece : Piece option
-      promoteTo : Piece option
+      capturedPiece : sbyte
+      promoteTo : sbyte
     }
 
 type OtherState =
@@ -40,5 +40,5 @@ type OtherState =
       BlackQRMoved: bool
       BlackKRMoved: bool
       EPSquare: Coordinates option
-      ToPlay: Color
+      ToPlay: sbyte
     }

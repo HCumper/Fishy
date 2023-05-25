@@ -2,10 +2,12 @@
 
 open System
 open Logger
-open Chess
+open Fishy
 open MakeMove
 open FENParser
 open Evaluation
+open Types
+open GenerateMoves
 
 let engine = "Fishy"
 let version = "0.1"
@@ -14,6 +16,16 @@ let player = true
 let go = false
 let quit = false
 
+let (gameState: OtherState) = {
+    WhiteKingMoved = false
+    WhiteQRMoved = false
+    WhiteKRMoved = false
+    BlackKingMoved = false
+    BlackQRMoved = false
+    BlackKRMoved = false
+    EPSquare = None
+    ToPlay = White }
+
 let logWriter = UCILogger()
 
 let output (text: string) =
@@ -21,24 +33,32 @@ let output (text: string) =
     logWriter.makeLogEntry "Outgoing " text
     ()
 
-let convertNumbersToCoordinates ((fromFile, fromRank), (toFile, toRank), promoteTo) =
+let convertNumbersToCoordinates (move: Move) =
     let files = " abcdefgh"
     let ranks = " 12345678"
-    let fileChar1 = files[fromFile]
-    let rankChar1 = ranks[fromRank]
-    let fileChar2 = files[toFile]
-    let rankChar2 = ranks[toRank]
+    let fileChar1 = files[move.fromFile]
+    let rankChar1 = ranks[move.fromRank]
+    let fileChar2 = files[move.toFile]
+    let rankChar2 = ranks[move.toRank]
     $"%c{fileChar1}%c{rankChar1}%c{fileChar2}%c{rankChar2}"
 
 let startGame (cmd: string) =
+
     let cmdList = cmd.Split [|' '|]
     if cmdList[1] = "startpos" then
         parseFEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" |> ignore
 
-        output "info string Position set to the starting position"
+        output $"command {cmd} received"
         if cmdList.Length > 2 && cmdList[2] = "moves" then
             let moves = Array.skip 3 cmdList
-            Array.iter parseAndMakeMove moves
+
+            let moveList = Array.iter (fun x -> parseAndMakeMove currentBoard gameState x |> ignore) moves
+            let y = moveList
+            ()
+        else
+            ()
+    else
+        ()
     ()
 
 let rec processCommand () =
@@ -50,10 +70,10 @@ let rec processCommand () =
 
     match cmd with
     | cmd when cmd[0..1] = "go" ->
-        let moves = engineMove ()
+        let moves = generateMoves currentBoard gameState
         let moves2 = moves |> List.head
-        let finalMove = moves2 |> convertNumbersToCoordinates
-        let eval = evaluate board currentState
+        let (finalMove: string) = moves2 |> convertNumbersToCoordinates
+        let eval = evaluate currentBoard gameState
         output $"bestmove {finalMove}"
     | cmd when cmd[0..9] = "ucinewgame" -> ()
     | cmd when cmd[0..7] = "position" -> startGame cmd
