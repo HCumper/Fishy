@@ -105,26 +105,32 @@ let kingEndgamePlacementTable =
 let initializePlacementValues () =
     for rank = 1 to 8 do
         for file = 1 to 8 do
-            pawnPlacementValues[file, rank] <- pawnPlacementTable[file - 1, rank - 1]
-            knightPlacementValues[file, rank] <- knightPlacementTable[file - 1, rank - 1]
-            bishopPlacementValues[file, rank] <- bishopPlacementTable[file - 1, rank - 1]
-            rookPlacementValues[file, rank] <- rookPlacementTable[file - 1, rank - 1]
-            queenPlacementValues[file, rank] <- queenPlacementTable[file - 1, rank - 1]
-            kingPlacementValues[file, rank] <- kingMiddlegamePlacementTable[file - 1, rank - 1]
+            pawnPlacementValues[file, rank] <- pawnPlacementTable[file - 1, rank - 1] * 10
+            knightPlacementValues[file, rank] <- knightPlacementTable[file - 1, rank - 1] * 10
+            bishopPlacementValues[file, rank] <- bishopPlacementTable[file - 1, rank - 1] * 10
+            rookPlacementValues[file, rank] <- rookPlacementTable[file - 1, rank - 1] * 10
+            queenPlacementValues[file, rank] <- queenPlacementTable[file - 1, rank - 1] * 10
+            kingPlacementValues[file, rank] <- kingMiddlegamePlacementTable[file - 1, rank - 1] * 10
 
 let evaluate (board: sbyte[,]) otherState : int =
 
     let placementValue (board: sbyte[,]) file rank =
-        let absValue =
-            match board[file, rank] with
-            | WhitePawn -> pawnPlacementValues[file, rank]
-            | WhiteKnight -> knightPlacementValues[file, rank]
-            | WhiteBishop -> bishopPlacementValues[file, rank]
-            | WhiteRook -> rookPlacementValues[file, rank]
-            | WhiteQueen -> queenPlacementValues[file, rank]
-            | _ -> 0
+        match board[file, rank] with
+        | WhitePawn -> pawnPlacementValues[9-rank, file]
+        | WhiteKnight -> knightPlacementValues[9-rank, file]
+        | WhiteBishop -> bishopPlacementValues[9-rank, file]
+        | WhiteRook -> rookPlacementValues[9-rank, file]
+        | WhiteQueen -> queenPlacementValues[9-rank, file]
+        | _ -> 0
 
-        if board[file, rank] > Empty then absValue else absValue * -1
+    let inversePlacementValue (board: sbyte[,]) file rank =
+        match board[file, rank] with
+        | BlackPawn -> pawnPlacementValues[rank, file]
+        | BlackKnight -> knightPlacementValues[rank, file]
+        | BlackBishop -> bishopPlacementValues[rank, file]
+        | BlackRook -> rookPlacementValues[rank, file]
+        | BlackQueen -> queenPlacementValues[rank, file]
+        | _ -> 0
 
     let pieceValue pieceType =
         match pieceType with
@@ -146,6 +152,9 @@ let evaluate (board: sbyte[,]) otherState : int =
     for rank = 1 to 8 do
         for file = 1 to 8 do
             if board[file, rank] <> Empty then
-                evaluation <- evaluation + pieceValue board[file, rank] + placementValue board file rank
+                if board[file, rank] > Empty then
+                    evaluation <- evaluation + pieceValue board[file, rank] + placementValue board file rank
+                else
+                    evaluation <- evaluation - pieceValue board[file, rank] - inversePlacementValue board file rank
 
     evaluation
