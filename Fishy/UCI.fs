@@ -8,6 +8,7 @@ open FENParser
 open Evaluation
 open Types
 open GenerateMoves
+open LookAhead
 
 let engine = "Fishy"
 let version = "0.1"
@@ -42,18 +43,16 @@ let convertNumbersToCoordinates (move: Move) =
     let rankChar2 = ranks[move.toRank]
     $"%c{fileChar1}%c{rankChar1}%c{fileChar2}%c{rankChar2}"
 
-let startGame (cmd: string) =
+let setupPosition (cmd: string) =
 
+    output $"command {cmd} received"
     let cmdList = cmd.Split [|' '|]
     if cmdList[1] = "startpos" then
         parseFEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" |> ignore
 
-        output $"command {cmd} received"
         if cmdList.Length > 2 && cmdList[2] = "moves" then
             let moves = Array.skip 3 cmdList
-
             let moveList = Array.iter (fun x -> parseAndMakeMove currentBoard gameState x |> ignore) moves
-            let y = moveList
             ()
         else
             ()
@@ -70,13 +69,11 @@ let rec processCommand () =
 
     match cmd with
     | cmd when cmd[0..1] = "go" ->
-        let moves = generateMoves currentBoard gameState
-        let moves2 = moves |> List.head
-        let (finalMove: string) = moves2 |> convertNumbersToCoordinates
-        let eval = evaluate currentBoard gameState
+        let engineMove = chooseEngineMove ()
+        let (finalMove: string) =  convertNumbersToCoordinates chosenMove
         output $"bestmove {finalMove}"
     | cmd when cmd[0..9] = "ucinewgame" -> ()
-    | cmd when cmd[0..7] = "position" -> startGame cmd
+    | cmd when cmd[0..7] = "position" -> setupPosition cmd
     | cmd when cmd[0..8] = "startpos " -> ()
     | cmd when cmd[0..8] = "setoption" -> ()
     | "test" -> () // For debugging exact positions
@@ -88,7 +85,7 @@ let rec processCommand () =
         output "id author Hugh Cumper"
         output "option:"
         output "uciok"
-        initializePlacementValues ()
+        initializePlacementValues () |> ignore
     | cmd when cmd[0..6] = "isready" -> output "readyok"
     | cmd when cmd[0..3] = "quit" ->
             logWriter.makeLogEntry "Outgoing " "quitting"

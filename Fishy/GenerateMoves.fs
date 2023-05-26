@@ -177,6 +177,7 @@ let generateMoves (board: Board) gameState : Move list =
                     | WhiteQueen -> generateVectorMoves gameState (file, rank) [(1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1)]
                     | WhitePawn -> generatePawnMoves gameState (file, rank)
                     | WhiteKing -> generateKingMoves gameState (file, rank)
+                    | _ -> []
 
                 availableMoves <- pieceMoves @ availableMoves
             | _ -> ()

@@ -45,11 +45,7 @@ let pieceToChar (piece: sbyte) =
     | WhiteBishop -> 'B'
     | WhiteKnight -> 'N'
     | WhitePawn -> 'P'
-
-let colorToChar (color: sbyte) =
-    match color with
-    | White -> 'w'
-    | Black -> 'b'
+    | _ -> ' '
 
 let boardToFen (board: Board) =
     let mutable fen = ""

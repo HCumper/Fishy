@@ -60,6 +60,14 @@ let mutable (currentBoard: sbyte[,]) = Array2D.createBased -1 -1 12 12 offBoard
 //    | x when x*y > 0 attempt to capture own piece
 
 // current state is passed around and coninually copied and destroyed
-// let mutable currentState = { WhiteKingMoved = false; WhiteQRMoved = false; WhiteKRMoved = false; BlackKingMoved = false; BlackQRMoved = false; BlackKRMoved = false; EPSquare = None; PromoteTo = None; ToPlay = White }
+let mutable currentState = { WhiteKingMoved = false; WhiteQRMoved = false; WhiteKRMoved = false; BlackKingMoved = false; BlackQRMoved = false; BlackKRMoved = false; EPSquare = None; ToPlay = White }
 
-//let availableMoves () = generateMoves board currentState
+let defaultMove =
+    { fromFile = 0
+      fromRank = 0
+      toFile = 0
+      toRank = 0
+      capturedPiece = 0y
+      promoteTo = 0y
+    }
+let mutable chosenMove = defaultMove

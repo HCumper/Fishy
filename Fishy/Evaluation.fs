@@ -18,12 +18,16 @@ let rookValue = 5000
 [<Literal>]
 let queenValue = 9000
 
-let pawnPlacementValues = Array2D.createBased 1 1 8 8 0
-let knightPlacementValues = Array2D.createBased 1 1 8 8 0
-let bishopPlacementValues = Array2D.createBased 1 1 8 8 0
-let rookPlacementValues = Array2D.createBased 1 1 8 8 0
-let queenPlacementValues = Array2D.createBased 1 1 8 8 0
-let kingPlacementValues = Array2D.createBased 1 1 8 8 0
+[<Literal>]
+let kingValue = 9000
+
+let private pawnPlacementValues = Array2D.createBased 1 1 8 8 0
+let private knightPlacementValues = Array2D.createBased 1 1 8 8 0
+let private bishopPlacementValues = Array2D.createBased 1 1 8 8 0
+let private rookPlacementValues = Array2D.createBased 1 1 8 8 0
+let private queenPlacementValues = Array2D.createBased 1 1 8 8 0
+let private kingMiddlegamePlacementValues = Array2D.createBased 1 1 8 8 0
+let private kingEndgamePlacementValues = Array2D.createBased 1 1 8 8 0
 
 let pawnPlacementTable =
     array2D
@@ -110,7 +114,8 @@ let initializePlacementValues () =
             bishopPlacementValues[file, rank] <- bishopPlacementTable[file - 1, rank - 1] * 10
             rookPlacementValues[file, rank] <- rookPlacementTable[file - 1, rank - 1] * 10
             queenPlacementValues[file, rank] <- queenPlacementTable[file - 1, rank - 1] * 10
-            kingPlacementValues[file, rank] <- kingMiddlegamePlacementTable[file - 1, rank - 1] * 10
+            kingMiddlegamePlacementValues[file, rank] <- kingMiddlegamePlacementTable[file - 1, rank - 1] * 10
+            kingEndgamePlacementValues[file, rank] <- kingEndgamePlacementTable[file - 1, rank - 1] * 10
 
 let evaluate (board: sbyte[,]) otherState : int =
 
@@ -121,6 +126,7 @@ let evaluate (board: sbyte[,]) otherState : int =
         | WhiteBishop -> bishopPlacementValues[9-rank, file]
         | WhiteRook -> rookPlacementValues[9-rank, file]
         | WhiteQueen -> queenPlacementValues[9-rank, file]
+        | WhiteKing -> kingMiddlegamePlacementValues[9-rank, file]
         | _ -> 0
 
     let inversePlacementValue (board: sbyte[,]) file rank =
@@ -130,20 +136,17 @@ let evaluate (board: sbyte[,]) otherState : int =
         | BlackBishop -> bishopPlacementValues[rank, file]
         | BlackRook -> rookPlacementValues[rank, file]
         | BlackQueen -> queenPlacementValues[rank, file]
+        | BlackKing -> kingMiddlegamePlacementValues[rank, file]
         | _ -> 0
 
     let pieceValue pieceType =
         match pieceType with
-        | WhitePawn -> pawnValue
-        | WhiteKnight -> knightValue
-        | WhiteBishop -> bishopValue
-        | WhiteRook -> rookValue
-        | WhiteQueen -> queenValue
-        | BlackPawn -> pawnValue
-        | BlackKnight -> knightValue
-        | BlackBishop -> bishopValue
-        | BlackRook -> rookValue
-        | BlackQueen -> queenValue
+        | WhitePawn | BlackPawn -> pawnValue
+        | WhiteKnight | BlackKnight -> knightValue
+        | WhiteBishop | BlackBishop -> bishopValue
+        | WhiteRook | BlackRook -> rookValue
+        | WhiteQueen | BlackQueen -> queenValue
+        | WhiteKing | BlackKing -> kingValue
         | _ -> 0
 
     // Evaluate body
