@@ -1,5 +1,6 @@
 ﻿module LookAhead
 
+open Types
 open System
 open GenerateMoves
 open Evaluation
@@ -7,23 +8,24 @@ open Fishy
 open MakeMove
 
 // The heart of the matter
-let rec negascout board otherState depthLeft alpha beta (color: SByte) =
+let rec negascout board otherState depthLeft alpha beta (bestSoFar: Move list) (color: SByte) : int * Move list =
 
     if depthLeft = 0 then
-        (int color) * (evaluate board otherState)
+        ((int color) * (evaluate board otherState), [])
     else
-        let mutable bestValue = Int32.MinValue
+        let mutable bestValue = -2000000000
         let mutable isFirstChild = true
         let mutable betaCutoff = false
+        let mutable chosenMoves = []
 
         for move in generateMoves board otherState do
             if not betaCutoff then
                 let newBoard, newState = makeMove (Array2D.copy board) otherState move
 
-                let score =
+                let score, mainLine =
     //                if isFirstChild then
                         // First child search with full window
-                        -(negascout newBoard newState (depthLeft - 1) -beta -alpha -color)
+                        negascout newBoard newState (depthLeft - 1) -beta -alpha bestSoFar -color
     //                else
     //                    // Null-window search
     //                    let score = -(negascout board otherState (depthLeft - 1) (-alpha - 1) -alpha -color)
@@ -34,17 +36,17 @@ let rec negascout board otherState depthLeft alpha beta (color: SByte) =
     //                    else
     //                        score
 
-                if score > bestValue then
-                    bestValue <- score
-                    chosenMove <- move
+                if -score > bestValue then
+                    bestValue <- -score
+                    chosenMoves <- mainLine @ [move]
 
-                if (max alpha score) >= beta then
+                if (max alpha -score) >= beta then
                     // Beta cutoff, prune remaining moves
                     betaCutoff <- true
 
                 isFirstChild <- false
 
-        bestValue
+        bestValue, bestSoFar @ chosenMoves
 
-let chooseEngineMove () =
-    negascout currentBoard currentState 2 Int32.MinValue Int32.MaxValue White
+let chooseEngineMove level =
+    negascout currentBoard currentState level -2000000000 2000000000 [] White

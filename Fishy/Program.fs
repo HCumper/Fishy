@@ -70,4 +70,3 @@ let defaultMove =
       capturedPiece = 0y
       promoteTo = 0y
     }
-let mutable chosenMove = defaultMove

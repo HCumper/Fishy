@@ -34,7 +34,7 @@ let generateMoves (board: Board) gameState : Move list =
         let isOppositionAllows (deltaFile, deltaRank) : bool =
             if isSquareEmptyOrOpponentPiece gameState.ToPlay (deltaFile, deltaRank) then
                 let availableDirections = List.filter (fun x -> board[(fst x) + deltaFile, (snd x) + deltaRank] <> offBoard) directions
-                not (List.exists (fun x -> abs board[(fst x) + deltaFile, (snd x) + deltaRank] = WhiteKing) availableDirections)
+                List.exists (fun x -> abs board[(fst x) + deltaFile, (snd x) + deltaRank] = WhiteKing) availableDirections
             else
                 false
 
@@ -122,7 +122,7 @@ let generateMoves (board: Board) gameState : Move list =
 
         let doubleAdvanceMove =
             if isSquareOnBoard (file, rank + direction) && board[file, rank + direction] = 0y &&
-               isSquareOnBoard (file, rank + direction * 2) && board[file, rank + direction * 2] = 0y then
+               isSquareOnBoard (file, rank + direction * 2) && board[file, rank + direction * 2] = 0y && (rank = 2 || rank = 7) then
                 [convertToMove file rank file (rank + direction * 2) Empty Empty]
             else
                 []

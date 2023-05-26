@@ -1,20 +1,19 @@
 ﻿module Fish.UCI
 
 open System
+open System.Runtime.InteropServices.JavaScript
 open Logger
 open Fishy
 open MakeMove
 open FENParser
 open Evaluation
 open Types
-open GenerateMoves
 open LookAhead
 
 let engine = "Fishy"
 let version = "0.1"
 
 let player = true
-let go = false
 let quit = false
 
 let (gameState: OtherState) = {
@@ -41,56 +40,67 @@ let convertNumbersToCoordinates (move: Move) =
     let rankChar1 = ranks[move.fromRank]
     let fileChar2 = files[move.toFile]
     let rankChar2 = ranks[move.toRank]
-    $"%c{fileChar1}%c{rankChar1}%c{fileChar2}%c{rankChar2}"
+    $"%c{fileChar1}%c{rankChar1}%c{fileChar2}%c{rankChar2} "
 
 let setupPosition (cmd: string) =
 
-    output $"command {cmd} received"
     let cmdList = cmd.Split [|' '|]
-    if cmdList[1] = "startpos" then
-        parseFEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" |> ignore
-
-        if cmdList.Length > 2 && cmdList[2] = "moves" then
-            let moves = Array.skip 3 cmdList
-            let moveList = Array.iter (fun x -> parseAndMakeMove currentBoard gameState x |> ignore) moves
-            ()
+    let fen =
+        if cmdList[1] = "startpos" then
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         else
-            ()
+            cmdList[1]
+    parseFEN fen |> ignore
+
+    if cmdList.Length > 2 && cmdList[2] = "moves" then
+        let moves = Array.skip 3 cmdList
+        let moveList = Array.iter (fun x -> parseAndMakeMove currentBoard gameState x |> ignore) moves
+        ()
     else
         ()
-    ()
+
+// various options unsupported
+let go (cmd: String) =
+    let cmdList = Array.toList (cmd.Split [|' '|])
+
+    let level =
+        match List.tryFindIndex (fun parm -> parm = "wtime") cmdList with
+        | Some index -> (int cmdList[index+1]) / 5000
+        | None -> 3
+    let valuation = chooseEngineMove 4
+    let (pv: string list) = List.map (fun x -> convertNumbersToCoordinates x) (List.rev (snd valuation))
+    let displayPV = List.reduce (+) pv
+    let score = (fst valuation) / 10
+    output $"info depth 2 score cp {score} time 1242 nodes 2124 nps 34928 pv {displayPV}"
+    output $"bestmove {pv.Head}"
 
 let rec processCommand () =
-
-    if go then ()
 
     let cmd = Console.ReadLine ()
     logWriter.makeLogEntry "Incoming " cmd
 
     match cmd with
-    | cmd when cmd[0..1] = "go" ->
-        let engineMove = chooseEngineMove ()
-        let (finalMove: string) =  convertNumbersToCoordinates chosenMove
-        output $"bestmove {finalMove}"
-    | cmd when cmd[0..9] = "ucinewgame" -> ()
-    | cmd when cmd[0..7] = "position" -> setupPosition cmd
-    | cmd when cmd[0..8] = "startpos " -> ()
-    | cmd when cmd[0..8] = "setoption" -> ()
-    | "test" -> () // For debugging exact positions
+    | cmd when cmd[0..4] = "debug" -> logWriter.makeLogEntry "Outgoing " "- debug command received"
+    | cmd when cmd[0..1] = "go" -> go cmd
+    | cmd when cmd[0..6] = "isready" -> output "readyok"
     | "wac" -> ()
-
+    | cmd when cmd[0..7] = "position" -> setupPosition cmd
+    | cmd when cmd[0..3] = "quit" ->
+            logWriter.makeLogEntry "Outgoing " "quitting"
+    | cmd when cmd[0..7] = "register" -> ()
     | "savefen" -> ()
+    | cmd when cmd[0..8] = "setoption" -> ()
+    | cmd when cmd[0..8] = "startpos " -> ()
+    | cmd when cmd[0..3] = "stop" ->
+            logWriter.makeLogEntry "Outgoing " "quitting"
+    | "test" -> () // For debugging exact positions
     | cmd when cmd[0..2] = "uci" ->
         output ("id name " + engine)
         output "id author Hugh Cumper"
         output "option:"
         output "uciok"
         initializePlacementValues () |> ignore
-    | cmd when cmd[0..6] = "isready" -> output "readyok"
-    | cmd when cmd[0..3] = "quit" ->
-            logWriter.makeLogEntry "Outgoing " "quitting"
-    | cmd when cmd[0..3] = "stop" ->
-            logWriter.makeLogEntry "Outgoing " "quitting"
+    | cmd when cmd[0..9] = "ucinewgame" -> ()
     | _ -> output ("Unrecognized uci command " + cmd)
 
     if cmd[0..3] <> "quit" && cmd[0..3] <> "stop" then
