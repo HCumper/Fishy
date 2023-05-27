@@ -2,14 +2,19 @@
 
 open Types
 open System
+open System.Diagnostics
 open GenerateMoves
 open Evaluation
-open Fishy
 open MakeMove
+open UCILogger
+
+let mutable nodes = 0
+let mutable stopwatch = Stopwatch.StartNew()
 
 // The heart of the matter
-let rec negascout board otherState depthLeft alpha beta (bestSoFar: Move list) (color: SByte) : int * Move list =
+let rec negascout board otherState depthLeft currentDepth alpha beta (bestSoFar: Move list) (color: SByte) : int * Move list =
 
+    nodes <- nodes+1
     if depthLeft = 0 then
         ((int color) * (evaluate board otherState), [])
     else
@@ -20,12 +25,13 @@ let rec negascout board otherState depthLeft alpha beta (bestSoFar: Move list) (
 
         for move in generateMoves board otherState do
             if not betaCutoff then
+
                 let newBoard, newState = makeMove (Array2D.copy board) otherState move
 
                 let score, mainLine =
     //                if isFirstChild then
                         // First child search with full window
-                        negascout newBoard newState (depthLeft - 1) -beta -alpha bestSoFar -color
+                        negascout newBoard newState (depthLeft - 1) (currentDepth + 1) -beta -alpha bestSoFar -color
     //                else
     //                    // Null-window search
     //                    let score = -(negascout board otherState (depthLeft - 1) (-alpha - 1) -alpha -color)
@@ -35,6 +41,9 @@ let rec negascout board otherState depthLeft alpha beta (bestSoFar: Move list) (
     //                        -(negascout board otherState (depthLeft - 1) -beta -score -color)
     //                    else
     //                        score
+
+                if currentDepth = 1 then
+                    writeInfo (bestValue / 10) (depthLeft+1) nodes stopwatch.ElapsedMilliseconds move (bestSoFar @ chosenMoves)
 
                 if -score > bestValue then
                     bestValue <- -score
@@ -49,4 +58,7 @@ let rec negascout board otherState depthLeft alpha beta (bestSoFar: Move list) (
         bestValue, bestSoFar @ chosenMoves
 
 let chooseEngineMove board level currentState =
-    negascout board currentState level -2000000000 2000000000 [] currentState.ToPlay
+    stopwatch.Reset()
+    stopwatch.Start()
+    nodes <- 0
+    negascout board currentState level 1 -2000000000 2000000000 [] currentState.ToPlay

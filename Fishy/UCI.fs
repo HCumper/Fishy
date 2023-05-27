@@ -2,7 +2,7 @@
 
 open System
 open System.Diagnostics
-open Logger
+open UCILogger
 open Fishy
 open MakeMove
 open FENParser
@@ -26,21 +26,7 @@ let mutable sessionState =
       FullMoveNumber = 0
     }
 
-let logWriter = UCILogger()
-
-let output (text: string) =
-    logWriter.makeLogEntry "Outgoing " text
-    Console.WriteLine text
-    Debug.WriteLine("Outgoing:  " + text)
-
-let convertNumbersToCoordinates (move: Move) =
-    let files = " abcdefgh"
-    let ranks = " 12345678"
-    let fileChar1 = files[move.fromFile]
-    let rankChar1 = ranks[move.fromRank]
-    let fileChar2 = files[move.toFile]
-    let rankChar2 = ranks[move.toRank]
-    $"%c{fileChar1}%c{rankChar1}%c{fileChar2}%c{rankChar2} "
+let mutable myColor = White
 
 let setupPosition (cmd: string) =
     let applyMoves move =
@@ -56,57 +42,62 @@ let setupPosition (cmd: string) =
     sessionBoard <- fst parseResult
     sessionState <- snd parseResult
 
+    myColor <- White
     if cmdList.Length > 2 && cmdList[2] = "moves" then
         let moves = Array.skip 3 cmdList
+        if moves.Length % 2 = 0 then myColor <- White else myColor <- Black
         Array.iter (applyMoves) moves
 
 let go (cmd: string) =
     let cmdList = Array.toList (cmd.Split [|' '|])
 
+    let time =
+        match myColor with
+        | White -> List.tryFindIndex (fun parm -> parm = "wtime") cmdList
+        | _ -> List.tryFindIndex (fun parm -> parm = "btime") cmdList
     let level =
-        match List.tryFindIndex (fun parm -> parm = "wtime") cmdList with
-        | Some index -> (int cmdList.[index+1]) / 5000
-        | None -> 3
-    let valuation = chooseEngineMove sessionBoard 4 sessionState
+        match time with
+        | Some length -> min ((int (cmdList[(int length) + 1])) / 10000) 4
+        | None -> 4
+    makeLogEntry $"level {level}"
+    let valuation = chooseEngineMove sessionBoard level sessionState
     let pv = List.map (convertNumbersToCoordinates) (List.rev (snd valuation))
-    let displayPV = String.concat "" pv
-    let score = fst valuation / 10
-    // output $"info score cp {score} pv {displayPV}"
-    output $"bestmove {List.head pv}"
+    writeOutput $"bestmove {List.head pv}"
 
 let rec processCommand () =
     let cmd = Console.ReadLine ()
-    Debug.WriteLine("Incoming:  " + cmd)
-    logWriter.makeLogEntry "Incoming " cmd
+    makeLogEntry ("Incoming " + cmd)
 
+    makeLogEntry cmd
     match cmd with
-    | cmd when cmd.StartsWith("debug") -> logWriter.makeLogEntry "Outgoing " "- debug command received"
+    | cmd when cmd.StartsWith("debug") -> ()
     | cmd when cmd.StartsWith("go") -> go cmd
-    | "isready" -> output "readyok"
-    | "wac" -> ()
+    | cmd when cmd.StartsWith("isready") -> writeOutput "readyok"
+    | cmd when cmd.StartsWith("wac") -> ()
     | cmd when cmd.StartsWith("position") -> setupPosition cmd
-    | cmd when cmd.StartsWith("quit") ->
-        logWriter.makeLogEntry "Outgoing " "quitting"
+    | cmd when cmd.StartsWith("quit") -> makeLogEntry "quitting"
     | cmd when cmd.StartsWith("register") -> ()
-    | "savefen" -> ()
+    | cmd when cmd.StartsWith("savefen") -> ()
     | cmd when cmd.StartsWith("setoption") -> ()
     | cmd when cmd.StartsWith("startpos") -> ()
     | cmd when cmd.StartsWith("stop") ->
-        logWriter.makeLogEntry "Outgoing " "quitting"
-    | "test" -> ()
+        writeOutput("Bestmove e2e4")
+        makeLogEntry "Incoming: stop"
+    | cmd when cmd.StartsWith("test") -> ()
     | cmd when cmd.StartsWith("uci") ->
-        output ("id name " + engine)
-        output "id author Hugh Cumper"
-        output "option:"
-        output "uciok"
+        writeOutput ("id name " + engine)
+        writeOutput "id author Hugh Cumper"
+        writeOutput "option:"
+        writeOutput "uciok"
         initializePlacementValues () |> ignore
-    | "ucinewgame" -> ()
-    | _ -> output ("Unrecognized uci command " + cmd)
+    | cmd when cmd.StartsWith("ucinewgame") -> ()
+    | _ -> writeOutput ("Unrecognized uci command " + cmd)
 
     if not (cmd.StartsWith("quit") || cmd.StartsWith("stop")) then
         processCommand ()
 
 [<EntryPoint>]
 let main _ =
+    initializeLogging ()
     processCommand ()
     0
