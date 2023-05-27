@@ -1,7 +1,6 @@
 ﻿module Evaluation
 
 open Fishy
-open Types
 
 [<Literal>]
 let pawnValue = 1000

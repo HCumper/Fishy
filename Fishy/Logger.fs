@@ -9,7 +9,7 @@ let uciLogging = true
 type UCILogger () =
     let logWriter =
 //       Debug.Listeners.Add(new TextWriterTraceListener(Console.Out));
-       Debug.AutoFlush = true;
+//       Debug.AutoFlush = true;
        Debug.Indent();
        Debug.WriteLine("Entering Main");
        Console.WriteLine("Hello World.");

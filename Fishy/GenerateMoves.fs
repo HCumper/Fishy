@@ -2,7 +2,6 @@
 
 open Fishy
 open Types
-open System
 
 // Create list of all available moves on the supplied board
 let generateMoves (board: Board) gameState : Move list =
@@ -26,7 +25,7 @@ let generateMoves (board: Board) gameState : Move list =
         }
 
         // can move into check
-    let generateKingMoves (gameState: OtherState) (file, rank) =
+    let generateKingMoves (gameState: GameState) (file, rank) =
         let directions = [(1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1)]
         let mutable (kingMoves: Move list) = []
 
@@ -47,27 +46,24 @@ let generateMoves (board: Board) gameState : Move list =
 
         // castling
         if gameState.ToPlay = White then
-            if not gameState.WhiteKingMoved then
-                if not gameState.WhiteKRMoved then
-                    if board[6, 1] = Empty && board[7, 1] = Empty then
-                        kingMoves <- convertToMove 5 1 7 1 Empty Empty :: kingMoves
+            if gameState.WhiteCanCastleKingside then
+                if board[6, 1] = Empty && board[7, 1] = Empty then
+                    kingMoves <- convertToMove 5 1 7 1 Empty Empty :: kingMoves
 
-                if not gameState.WhiteQRMoved then
-                    if board[4, 1] = Empty && board[3, 1] = Empty && board[2, 1] = Empty then
-                        kingMoves <- convertToMove 5 1 3 1 Empty Empty:: kingMoves
+            if gameState.WhiteCanCastleQueenside then
+                if board[4, 1] = Empty && board[3, 1] = Empty && board[2, 1] = Empty then
+                    kingMoves <- convertToMove 5 1 3 1 Empty Empty:: kingMoves
         else
-            if not gameState.BlackKingMoved then
-                if not gameState.BlackKRMoved then
-                    if board[6, 1] = Empty && board[7, 1] = Empty then
-                        kingMoves <- convertToMove 5 1 7 1 Empty Empty :: kingMoves
+            if gameState.BlackCanCastleKingside then
+                if board[6, 8] = Empty && board[7, 8] = Empty then
+                    kingMoves <- convertToMove 5 8 7 8 Empty Empty :: kingMoves
 
-                if not gameState.BlackQRMoved then
-                    if board[4, 1] = Empty && board[3, 1] = Empty && board[2, 1] = Empty then
-                        kingMoves <- convertToMove 5 1 3 1 Empty Empty:: kingMoves
+                if not gameState.BlackCanCastleQueenside then
+                    kingMoves <- convertToMove 5 8 3 8 Empty Empty:: kingMoves
 
         kingMoves
 
-    let generatePawnMoves (gameState: OtherState) (file, rank) =
+    let generatePawnMoves (gameState: GameState) (file, rank) =
         let direction = if gameState.ToPlay = Black then -1 else 1
 
         let singleAdvanceMoves =

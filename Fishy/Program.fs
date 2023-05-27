@@ -50,17 +50,27 @@ let Empty = 0y
 [<Literal>]
 let offBoard = 100y
 
-// This is a global variable on which actual game moves are made and unmade
-let mutable (currentBoard: sbyte[,]) = Array2D.createBased -1 -1 12 12 offBoard
-
-// match from * to with
-//    | x when x = 0 move to empty Square
-//    | x when x = 100 move off Board
-//    | x when x*y < 0 Capture
-//    | x when x*y > 0 attempt to capture own piece
-
-// current state is passed around and coninually copied and destroyed
-let mutable currentState = { WhiteKingMoved = false; WhiteQRMoved = false; WhiteKRMoved = false; BlackKingMoved = false; BlackQRMoved = false; BlackKRMoved = false; EPSquare = None; ToPlay = White }
+// // This is a global variable on which actual game moves are made and unmade
+// // board and state have to be global mutables as communication via UCI ia stateful
+// let mutable (globalBoard: sbyte[,]) = Array2D.createBased -1 -1 12 12 offBoard
+//
+// // match from * to with
+// //    | x when x = 0 move to empty Square
+// //    | x when x = 100 move off Board
+// //    | x when x*y < 0 Capture
+// //    | x when x*y > 0 attempt to capture own piece
+//
+// // current state is passed around and coninually copied and destroyed
+// let mutable globalState: GameState =
+//     { WhiteCanCastleKingside = true
+//       WhiteCanCastleQueenside = true
+//       BlackCanCastleKingside = true
+//       BlackCanCastleQueenside = true
+//       ToPlay = White
+//       EPSquare = None
+//       HalfMoveClock = 0
+//       FullMoveNumber = 0
+//     }
 
 let defaultMove =
     { fromFile = 0
@@ -68,5 +78,4 @@ let defaultMove =
       toFile = 0
       toRank = 0
       capturedPiece = 0y
-      promoteTo = 0y
-    }
+      promoteTo = 0y }

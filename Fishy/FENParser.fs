@@ -3,6 +3,12 @@
 open Types
 open Fishy
 
+let private convertCoordinatesToNumbers (square: string) : (int * int) option =
+    let file = int square[0] - int 'a' + 1
+    match square with
+    | "-" -> None
+    | x -> Some (file, int square[1])
+
 let parseFEN (fen: string) =
     let parsePiece c =
         match c with
@@ -23,19 +29,43 @@ let parseFEN (fen: string) =
     let parseBoard boardStr =
         let mutable rank = 8
         let mutable file = 1
+        let mutable board = Array2D.createBased -1 -1 12 12 offBoard
+
         for c in boardStr do
             match c with
             | '/' -> rank <- rank - 1; file <- 1
             | _ when c >= '1' && c <= '8' ->
                 let numEmptySquares = int(c) - int('0')
                 for i in 1 .. numEmptySquares do
-                    currentBoard[file + i - 1, rank] <- Empty
+                    board[file + i - 1, rank] <- Empty
                 file <- file + numEmptySquares
-            | _ -> currentBoard[file, rank] <- parsePiece c; file <- file + 1
-        currentBoard
+            | _ -> board[file, rank] <- parsePiece c; file <- file + 1
+        board
 
-    let parts = fen.Split(' ')
-    parseBoard parts[0]
+    let fields = fen.Split(' ')
+    let board = parseBoard fields[0]
+
+    let activeColor = fields[1]
+    let castlingStr = fields[2]
+    let whiteKingSide = castlingStr.Contains('K')
+    let whiteQueenSide = castlingStr.Contains('Q')
+    let blackKingSide = castlingStr.Contains('k')
+    let blackQueenSide = castlingStr.Contains('q')
+
+    let enPassantTargetSquare = fields[3]
+    let halfMoveClock = int fields[4]
+    let fullmoveNumber = int fields[5]
+
+    board, {
+        WhiteCanCastleKingside = whiteKingSide
+        WhiteCanCastleQueenside = whiteQueenSide
+        BlackCanCastleKingside = blackKingSide
+        BlackCanCastleQueenside = blackQueenSide
+        ToPlay = match activeColor with | "w" -> 1y | _ -> -1y
+        EPSquare = convertCoordinatesToNumbers enPassantTargetSquare
+        HalfMoveClock = halfMoveClock
+        FullMoveNumber = fullmoveNumber
+    }
 
 let pieceToChar (piece: sbyte) =
     match piece with
@@ -47,6 +77,7 @@ let pieceToChar (piece: sbyte) =
     | WhitePawn -> 'P'
     | _ -> ' '
 
+// Handles board string only
 let boardToFen (board: Board) =
     let mutable fen = ""
     for rank = 8 downto 1 do  // Iterate ranks in reverse order

@@ -4,7 +4,7 @@ open System
 open Fishy
 open Types
 
-let makeMove (board: sbyte[,]) currentState move =
+let makeMove (board: sbyte[,]) (currentState: GameState) move =
 
     let pieceMoving = board[move.fromFile, move.fromRank]
 
@@ -39,18 +39,33 @@ let makeMove (board: sbyte[,]) currentState move =
     board[move.fromFile, move.fromRank] <- Empty
 
     let epSquare = if isEp then Some (move.toFile, move.fromRank) else None
+    let whiteCastling =
+        match pieceMoving with
+        | WhiteKing -> false, false
+        | x when WhiteRook = x && move.fromRank = 1 -> false, currentState.WhiteCanCastleQueenside
+        | x when WhiteRook = x && move.fromRank = 1 -> currentState.WhiteCanCastleKingside, false
+        | _ -> currentState.WhiteCanCastleKingside, currentState.WhiteCanCastleQueenside
+
+    let blackCastling =
+        match pieceMoving with
+        | BlackKing -> false, false
+        | x when BlackRook = x && move.fromRank = 1 -> false, currentState.BlackCanCastleQueenside
+        | x when BlackRook = x && move.fromRank = 1 -> currentState.BlackCanCastleKingside, false
+        | _ -> currentState.BlackCanCastleKingside, currentState.BlackCanCastleQueenside
 
     (board,
      { currentState with
-         WhiteKingMoved = pieceMoving = WhiteKing
-         WhiteKRMoved = (pieceMoving = WhiteRook) && move.fromFile = 8 && move.fromRank = 1
-         WhiteQRMoved = ((pieceMoving = WhiteRook) && move.fromFile = 1 && move.fromRank = 1)
-         BlackKingMoved = pieceMoving = BlackKing
-         BlackKRMoved = (pieceMoving = BlackRook) && move.fromFile = 8 && move.fromRank = 1
-         BlackQRMoved = ((pieceMoving = BlackRook) && move.fromFile = 1 && move.fromRank = 1)
-         ToPlay = -currentState.ToPlay })
+        WhiteCanCastleKingside = fst whiteCastling
+        WhiteCanCastleQueenside = snd whiteCastling
+        BlackCanCastleKingside = fst blackCastling
+        BlackCanCastleQueenside =  snd blackCastling
+        ToPlay = -currentState.ToPlay
+        EPSquare = epSquare
+        FullMoveNumber = match pieceMoving with | x when x > 0y -> currentState.FullMoveNumber | _ -> currentState.FullMoveNumber + 1
+        HalfMoveClock = currentState.HalfMoveClock + 1
+        })
 
-let parseAndMakeMove (board: sbyte[,]) (currentState: OtherState) strMove =
+let parseAndMakeMove (board: sbyte[,]) (currentState: GameState) strMove =
     let parseMove (move: string) : int * int * int * int * sbyte =
         let parseFile c =
             match c with

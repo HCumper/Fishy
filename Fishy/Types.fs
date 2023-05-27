@@ -11,12 +11,6 @@ type Piece =
     | Bishop
     | Knight
     | Pawn
-//
-// type Color =
-//     | White
-//     | Black
-
-//type Square = (Piece * Color) option
 
 type Board = sbyte[,]
 
@@ -32,13 +26,13 @@ type Move =
       promoteTo : sbyte
     }
 
-type OtherState =
-    { WhiteKingMoved: bool
-      WhiteQRMoved: bool
-      WhiteKRMoved: bool
-      BlackKingMoved: bool
-      BlackQRMoved: bool
-      BlackKRMoved: bool
-      EPSquare: Coordinates option
+type GameState =
+    { WhiteCanCastleKingside: bool
+      WhiteCanCastleQueenside: bool
+      BlackCanCastleKingside: bool
+      BlackCanCastleQueenside: bool
       ToPlay: sbyte
+      EPSquare: Coordinates option
+      HalfMoveClock: int
+      FullMoveNumber: int
     }

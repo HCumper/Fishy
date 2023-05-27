@@ -48,5 +48,5 @@ let rec negascout board otherState depthLeft alpha beta (bestSoFar: Move list) (
 
         bestValue, bestSoFar @ chosenMoves
 
-let chooseEngineMove level =
-    negascout currentBoard currentState level -2000000000 2000000000 [] White
+let chooseEngineMove board level currentState =
+    negascout board currentState level -2000000000 2000000000 [] currentState.ToPlay
