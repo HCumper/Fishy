@@ -1,7 +1,7 @@
 ﻿module Fish.UCI
 
 open System
-open System.Runtime.InteropServices.JavaScript
+open System.Diagnostics
 open Logger
 open Fishy
 open MakeMove
@@ -29,8 +29,10 @@ let (gameState: OtherState) = {
 let logWriter = UCILogger()
 
 let output (text: string) =
-    Console.WriteLine text
     logWriter.makeLogEntry "Outgoing " text
+    Console.WriteLine text
+    Debug.WriteLine("Outgoing:  " + text);
+
     ()
 
 let convertNumbersToCoordinates (move: Move) =
@@ -71,12 +73,13 @@ let go (cmd: String) =
     let (pv: string list) = List.map (fun x -> convertNumbersToCoordinates x) (List.rev (snd valuation))
     let displayPV = List.reduce (+) pv
     let score = (fst valuation) / 10
-    output $"info depth 2 score cp {score} time 1242 nodes 2124 nps 34928 pv {displayPV}"
+//    output $"info score cp {score} pv {displayPV}"
     output $"bestmove {pv.Head}"
 
 let rec processCommand () =
 
     let cmd = Console.ReadLine ()
+    Debug.WriteLine("Incoming:  " + cmd);
     logWriter.makeLogEntry "Incoming " cmd
 
     match cmd with

@@ -2,11 +2,19 @@
 
 open System
 open System.IO
+open System.Diagnostics
 let outputFile = @".\ucilog.txt"
 let uciLogging = true
 
 type UCILogger () =
     let logWriter =
+//       Debug.Listeners.Add(new TextWriterTraceListener(Console.Out));
+       Debug.AutoFlush = true;
+       Debug.Indent();
+       Debug.WriteLine("Entering Main");
+       Console.WriteLine("Hello World.");
+       Debug.WriteLine("Exiting Main");
+       Debug.Unindent();
         match uciLogging with
         | true ->
             File.Delete outputFile
