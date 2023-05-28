@@ -29,7 +29,7 @@ type Move =
       promoteTo : sbyte
     }
 
-type HashTable = Dictionary<int64, (int * int)>
+type HashTable = Dictionary<int64, int>
 
 type GameState =
     { WhiteCanCastleKingside: bool

@@ -81,4 +81,4 @@ let defaultMove =
       capturedPiece = 0y
       promoteTo = 0y }
 
-let mutable (transpositionTable: HashTable) = Dictionary<int64, (int * int)>()
+let mutable (transpositionTable: HashTable) = Dictionary<int64, int>()

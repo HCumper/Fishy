@@ -59,7 +59,7 @@ let parseFEN (fen: string) =
     let halfMoveClock = int fields[4]
     let fullmoveNumber = int fields[5]
 
-    board, {
+    let otherState = {
         WhiteCanCastleKingside = whiteKingSide
         WhiteCanCastleQueenside = whiteQueenSide
         BlackCanCastleKingside = blackKingSide
@@ -68,7 +68,12 @@ let parseFEN (fen: string) =
         EPSquare = convertCoordinatesToNumbers enPassantTargetSquare
         HalfMoveClock = halfMoveClock
         FullMoveNumber = fullmoveNumber
-        HashKey = initializePositionHash board
+        HashKey = 0
+    }
+
+    board, {
+        otherState with
+        HashKey = initializePositionHash board otherState
     }
 
 let pieceToChar (piece: sbyte) =
