@@ -8,6 +8,7 @@
     <ItemGroup>
         <Compile Include="Types.fs" />
         <Compile Include="Program.fs" />
+        <Compile Include="Zobrist.fs" />
         <Compile Include="GenerateMoves.fs" />
         <Compile Include="UCILogger.fs" />
         <Compile Include="FENParser.fs" />

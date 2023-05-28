@@ -1,5 +1,8 @@
 ﻿module Types
 
+open System
+open System.Collections.Generic
+
 type Player =
     | Human
     | Engine
@@ -26,6 +29,8 @@ type Move =
       promoteTo : sbyte
     }
 
+type HashTable = Dictionary<int64, (int * int)>
+
 type GameState =
     { WhiteCanCastleKingside: bool
       WhiteCanCastleQueenside: bool
@@ -35,4 +40,5 @@ type GameState =
       EPSquare: Coordinates option
       HalfMoveClock: int
       FullMoveNumber: int
+      HashKey: Int64
     }

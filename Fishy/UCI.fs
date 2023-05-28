@@ -24,6 +24,7 @@ let mutable sessionState =
       EPSquare = None
       HalfMoveClock = 0
       FullMoveNumber = 0
+      HashKey = 0
     }
 
 let mutable myColor = White
@@ -37,11 +38,10 @@ let setupPosition (cmd: string) =
         if cmdList[1] = "startpos" then
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         else
-            cmdList.[1]
+            cmdList[1]
     let parseResult = parseFEN fen
     sessionBoard <- fst parseResult
     sessionState <- snd parseResult
-
     myColor <- White
     if cmdList.Length > 2 && cmdList[2] = "moves" then
         let moves = Array.skip 3 cmdList

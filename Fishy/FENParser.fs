@@ -1,7 +1,9 @@
 ﻿module FENParser
 
+open System.Collections.Generic
 open Types
 open Fishy
+open Zobrist
 
 let private convertCoordinatesToNumbers (square: string) : (int * int) option =
     let file = int square[0] - int 'a' + 1
@@ -24,7 +26,7 @@ let parseFEN (fen: string) =
         | 'B' -> WhiteBishop
         | 'N' -> WhiteKnight
         | 'P' -> WhitePawn
-        | _ -> Empty
+        | _ -> 0y
 
     let parseBoard boardStr =
         let mutable rank = 8
@@ -44,6 +46,7 @@ let parseFEN (fen: string) =
 
     let fields = fen.Split(' ')
     let board = parseBoard fields[0]
+    transpositionTable <- Dictionary<int64, (int * int)>()
 
     let activeColor = fields[1]
     let castlingStr = fields[2]
@@ -65,6 +68,7 @@ let parseFEN (fen: string) =
         EPSquare = convertCoordinatesToNumbers enPassantTargetSquare
         HalfMoveClock = halfMoveClock
         FullMoveNumber = fullmoveNumber
+        HashKey = initializePositionHash board
     }
 
 let pieceToChar (piece: sbyte) =
