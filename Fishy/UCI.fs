@@ -2,6 +2,7 @@
 
 open System
 open System.Diagnostics
+open Transpositions
 open UCILogger
 open Fishy
 open MakeMove
@@ -61,14 +62,13 @@ let go (cmd: string) =
         | None -> 4
     makeLogEntry $"level {level}"
     let valuation = chooseEngineMove sessionBoard level sessionState
-    let pv = List.map (convertNumbersToCoordinates) (List.rev (snd valuation))
+    let pv = List.map convertNumbersToCoordinates (List.rev (snd valuation))
     writeOutput $"bestmove {List.head pv}"
 
 let rec processCommand () =
     let cmd = Console.ReadLine ()
     makeLogEntry ("Incoming " + cmd)
 
-    makeLogEntry cmd
     match cmd with
     | cmd when cmd.StartsWith("debug") -> ()
     | cmd when cmd.StartsWith("go") -> go cmd
@@ -90,7 +90,9 @@ let rec processCommand () =
         writeOutput "option:"
         writeOutput "uciok"
         initializePlacementValues () |> ignore
-    | cmd when cmd.StartsWith("ucinewgame") -> ()
+    | cmd when cmd.StartsWith("ucinewgame") ->
+        Transpositions.resetTranspositionTable
+        ()
     | _ -> writeOutput ("Unrecognized uci command " + cmd)
 
     if not (cmd.StartsWith("quit") || cmd.StartsWith("stop")) then

@@ -30,21 +30,32 @@ let convertNumbersToCoordinates (move: Move) =
     let rankChar2 = ranks[move.toRank]
     $"%c{fileChar1}%c{rankChar1}%c{fileChar2}%c{rankChar2} "
 
-let writeInfo evaluation depth nodes time currmove pv =
-    let currMoveString = convertNumbersToCoordinates currmove
+let writePV evaluation depth nodes time pv =
     let pvString = List.fold (fun acc item -> acc + convertNumbersToCoordinates item) "" pv
     let eval = if evaluation < -1000000 then 0 else evaluation
-    let cmdString = $"info score cp {eval.ToString()} depth {depth.ToString()} nodes {nodes.ToString()} time {time.ToString()} currmove {currMoveString} pv {pvString}"
+    let cmdString = $"info depth {depth.ToString()} score cp {eval.ToString()}  time {time.ToString()} nodes {nodes.ToString()} nps {(nodes * 1000 / time).ToString()} pv {pvString}"
+    Console.WriteLine cmdString
+#if DEBUG
+    writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Outgoing:     {cmdString}"
+#endif
+    ()
+// (win prob) (depth x.y) (currentmove name and number) (nodes per sec) hashfull
+// numerical advantage (depth x) (currmove name and number) (nodes per sec) hashfull
+
+let writeCurrmove currmove currmoveNumber hashfull =
+    let currMoveString = convertNumbersToCoordinates currmove
+    let cmdString = $"info currmove {currMoveString} hashfull {hashfull} currmovenumber {currmoveNumber}"
     Console.WriteLine cmdString
 #if DEBUG
     writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Outgoing:     {cmdString}"
 #endif
     ()
 
+
 let writeOutput (cmd: string) =
     Console.WriteLine cmd
 #if DEBUG
-    writer.WriteLine ($"{DateTime.Now} Outgoing:    {cmd}")
+    writer.WriteLine ($"{DateTime.Now.TimeOfDay} Outgoing:    {cmd}")
 #endif
     ()
 

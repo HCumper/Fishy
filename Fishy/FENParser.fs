@@ -46,7 +46,6 @@ let parseFEN (fen: string) =
 
     let fields = fen.Split(' ')
     let board = parseBoard fields[0]
-    transpositionTable <- Dictionary<int64, (int * int)>()
 
     let activeColor = fields[1]
     let castlingStr = fields[2]
@@ -71,10 +70,7 @@ let parseFEN (fen: string) =
         HashKey = 0
     }
 
-    board, {
-        otherState with
-        HashKey = initializePositionHash board otherState
-    }
+    board, { otherState with HashKey = initializePositionHash board otherState }
 
 let pieceToChar (piece: sbyte) =
     match piece with

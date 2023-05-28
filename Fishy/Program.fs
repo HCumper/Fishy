@@ -80,5 +80,3 @@ let defaultMove =
       toRank = 0
       capturedPiece = 0y
       promoteTo = 0y }
-
-let mutable (transpositionTable: HashTable) = Dictionary<int64, int>()

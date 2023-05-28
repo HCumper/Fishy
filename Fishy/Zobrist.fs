@@ -37,6 +37,12 @@ let updatePositionHash pieceWithColor file rank positionHash =
     let (pieceSquareKey: int64) = zobristKeys[pieceWithColor, file, rank]
     int64 positionHash ^^^ pieceSquareKey
 
+//  update the hash value for an added or removed piece using the global piece type
+let updatePositionHashWithGlobalPiece (piece: sbyte) file rank positionHash =
+    let pieceWithColor = convertPieceTypeToZobristType piece
+    let (pieceSquareKey: int64) = zobristKeys[pieceWithColor, file, rank]
+    int64 positionHash ^^^ pieceSquareKey
+
 // initializes the hash value based on the given board position
 let initializePositionHash (board: Board) (gameState: GameState) =
     let mutable (positionHash: int64) = 0
