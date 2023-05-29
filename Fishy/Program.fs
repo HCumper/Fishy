@@ -1,6 +1,5 @@
 ﻿module Fishy
 
-open System.Collections.Generic
 open Types
 
 [<Literal>]

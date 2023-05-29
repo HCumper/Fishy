@@ -7,7 +7,8 @@ open GenerateMoves
 open Evaluation
 open MakeMove
 open UCILogger
-open Zobrist
+open Transpositions
+
 let mutable nodes = 0
 let mutable stopwatch = Stopwatch.StartNew()
 
@@ -27,7 +28,8 @@ let rec negascout board otherState depthLeft currentDepth alpha beta (color: SBy
             if not betaCutoff then
 
                 let newBoard, newState = makeMove (Array2D.copy board) otherState move
-                let positionHash = initializePositionHash newBoard newState
+                //match transpositionTableLookup newBoard newState with
+
                 let score, mainLine =
     //                if isFirstChild then
                         // First child search with full window
@@ -42,7 +44,7 @@ let rec negascout board otherState depthLeft currentDepth alpha beta (color: SBy
     //                    else
     //                        score
                 if currentDepth = 1 then
-                    writePV (bestValue / 10) (depthLeft+1) nodes (int stopwatch.ElapsedMilliseconds) chosenMoves
+                    writePV (bestValue / 10) (depthLeft+1) nodes (int stopwatch.ElapsedMilliseconds) (move :: chosenMoves)
                     writeCurrmove move 4 458
 
                 if -score > bestValue then

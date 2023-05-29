@@ -1,6 +1,5 @@
 ﻿module FENParser
 
-open System.Collections.Generic
 open Types
 open Fishy
 open Zobrist
@@ -9,7 +8,7 @@ let private convertCoordinatesToNumbers (square: string) : (int * int) option =
     let file = int square[0] - int 'a' + 1
     match square with
     | "-" -> None
-    | x -> Some (file, int square[1])
+    | _ -> Some (file, int square[1])
 
 let parseFEN (fen: string) =
     let parsePiece c =

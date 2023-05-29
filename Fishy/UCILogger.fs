@@ -39,8 +39,6 @@ let writePV evaluation depth nodes time pv =
     writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Outgoing:     {cmdString}"
 #endif
     ()
-// (win prob) (depth x.y) (currentmove name and number) (nodes per sec) hashfull
-// numerical advantage (depth x) (currmove name and number) (nodes per sec) hashfull
 
 let writeCurrmove currmove currmoveNumber hashfull =
     let currMoveString = convertNumbersToCoordinates currmove
@@ -55,7 +53,7 @@ let writeCurrmove currmove currmoveNumber hashfull =
 let writeOutput (cmd: string) =
     Console.WriteLine cmd
 #if DEBUG
-    writer.WriteLine ($"{DateTime.Now.TimeOfDay} Outgoing:    {cmd}")
+    writer.WriteLine $"{DateTime.Now.TimeOfDay} Outgoing:    {cmd}"
 #endif
     ()
 
@@ -65,7 +63,7 @@ let makeLogEntry (cmd: string) =
 #endif
     ()
 
-let readInput (cmd: string) =
+let readInput =
     let cmd = Console.ReadLine ()
 #if DEBUG
     writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Incoming:    {cmd}"

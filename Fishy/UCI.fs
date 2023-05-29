@@ -66,8 +66,7 @@ let go (cmd: string) =
     writeOutput $"bestmove {List.head pv}"
 
 let rec processCommand () =
-    let cmd = Console.ReadLine ()
-    makeLogEntry ("Incoming " + cmd)
+    let cmd = readInput
 
     match cmd with
     | cmd when cmd.StartsWith("debug") -> ()
