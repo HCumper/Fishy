@@ -2,6 +2,7 @@
 
 open System
 open System.Diagnostics
+open System.Threading.Tasks
 open Transpositions
 open UCILogger
 open Fishy
@@ -56,49 +57,73 @@ let go (cmd: string) =
         match myColor with
         | White -> List.tryFindIndex (fun parm -> parm = "wtime") cmdList
         | _ -> List.tryFindIndex (fun parm -> parm = "btime") cmdList
-    let level =
-        match time with
-        | Some length -> min ((int (cmdList[(int length) + 1])) / 10000) 4
-        | None -> 4
+    // let level =
+    //     match time with
+    //     | Some length -> min ((int (cmdList[(int length) + 1])) / 10000) 4
+    //     | None -> 4
+    let level = 4
     makeLogEntry $"level {level}"
     let valuation = chooseEngineMove sessionBoard level sessionState
     let pv = List.map convertNumbersToCoordinates (List.rev (snd valuation))
     writeOutput $"bestmove {List.head pv}"
 
 let rec processCommand () =
-    let cmd = readInput
+    let mutable exit = false
 
-    match cmd with
-    | cmd when cmd.StartsWith("debug") -> ()
-    | cmd when cmd.StartsWith("go") -> go cmd
-    | cmd when cmd.StartsWith("isready") -> writeOutput "readyok"
-    | cmd when cmd.StartsWith("wac") -> ()
-    | cmd when cmd.StartsWith("position") -> setupPosition cmd
-    | cmd when cmd.StartsWith("quit") -> makeLogEntry "quitting"
-    | cmd when cmd.StartsWith("register") -> ()
-    | cmd when cmd.StartsWith("savefen") -> ()
-    | cmd when cmd.StartsWith("setoption") -> ()
-    | cmd when cmd.StartsWith("startpos") -> ()
-    | cmd when cmd.StartsWith("stop") ->
-        writeOutput("Bestmove e2e4")
-        makeLogEntry "Incoming: stop"
-    | cmd when cmd.StartsWith("test") -> ()
-    | cmd when cmd.StartsWith("uci") ->
-        writeOutput ("id name " + engine)
-        writeOutput "id author Hugh Cumper"
-        writeOutput "option:"
-        writeOutput "uciok"
-        initializePlacementValues () |> ignore
-    | cmd when cmd.StartsWith("ucinewgame") ->
-        Transpositions.resetTranspositionTable
-        ()
-    | _ -> writeOutput ("Unrecognized uci command " + cmd)
+    while not exit do
+        let cmd = Console.ReadLine ()
 
-    if not (cmd.StartsWith("quit") || cmd.StartsWith("stop")) then
-        processCommand ()
+        match cmd with
+        | cmd when cmd.StartsWith("debug") -> ()
+        | cmd when cmd.StartsWith("go") -> go cmd
+        | cmd when cmd.StartsWith("isready") -> writeOutput "readyok"
+        | cmd when cmd.StartsWith("wac") -> ()
+        | cmd when cmd.StartsWith("position") -> setupPosition cmd
+        | cmd when cmd.StartsWith("quit") -> makeLogEntry "quitting"
+        | cmd when cmd.StartsWith("register") -> ()
+        | cmd when cmd.StartsWith("savefen") -> ()
+        | cmd when cmd.StartsWith("setoption") -> ()
+        | cmd when cmd.StartsWith("startpos") -> ()
+        | cmd when cmd.StartsWith("stop") ->
+            writeOutput("Bestmove e2e4")
+            makeLogEntry "Incoming: stop"
+        | cmd when cmd.StartsWith("test") -> ()
+        | cmd when cmd.StartsWith("uci") ->
+            writeOutput ("id name " + engine)
+            writeOutput "id author Hugh Cumper"
+            writeOutput "option:"
+            writeOutput "uciok"
+            initializePlacementValues () |> ignore
+        | cmd when cmd.StartsWith("ucinewgame") ->
+    //        Transpositions.resetTranspositionTable
+            ()
+        | _ -> writeOutput ("Unrecognized uci command " + cmd)
+
+        if cmd.StartsWith("quit") || cmd.StartsWith("stop") then
+            exit <- true
+
+let reportToUCI () =
+    writePV topLevelBestValue reportingDepth nodes (int stopwatch.ElapsedMilliseconds) mainLine
+    writeCurrmove currMove moveNumber (cacheHits / (cacheMisses+1))
+
+let rec oneSecondReporting () =
+    async {
+        reportToUCI ()
+        do! Task.Delay(1000) |> Async.AwaitTask
+        return! oneSecondReporting ()
+    }
+
+let setupOneSecondReporting () =
+    async {
+        do! oneSecondReporting ()
+    }
+
+let reporting () =
+    Async.StartImmediate(setupOneSecondReporting ())
 
 [<EntryPoint>]
 let main _ =
-    initializeLogging ()
+    reporting ()
+//    initializeLogging ()
     processCommand ()
     0

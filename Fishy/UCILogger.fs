@@ -11,7 +11,7 @@ let writer = File.AppendText outputFile
 
 let initializeLogging () =
 #if DEBUG
-    writer.AutoFlush <- true
+//    writer.AutoFlush <- true
     writer.WriteLine ""
     writer.WriteLine ""
     writer.WriteLine ""
@@ -33,7 +33,7 @@ let convertNumbersToCoordinates (move: Move) =
 let writePV evaluation depth nodes time pv =
     let pvString = List.fold (fun acc item -> acc + convertNumbersToCoordinates item) "" pv
     let eval = if evaluation < -1000000 then 0 else evaluation
-    let cmdString = $"info depth {depth.ToString()} score cp {eval.ToString()}  time {time.ToString()} nodes {nodes.ToString()} nps {(nodes * 1000 / time).ToString()} pv {pvString}"
+    let cmdString = $"info depth {depth.ToString()} score cp {eval.ToString()}  time {time.ToString()} nodes {nodes.ToString()} nps {(nodes * 1000 / (time + 1)).ToString()} pv {pvString}"
     Console.WriteLine cmdString
 #if DEBUG
     writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Outgoing:     {cmdString}"
@@ -63,9 +63,9 @@ let makeLogEntry (cmd: string) =
 #endif
     ()
 
-let readInput =
-    let cmd = Console.ReadLine ()
-#if DEBUG
-    writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Incoming:    {cmd}"
-#endif
-    cmd
+// let readInput =
+//     let cmd = Console.ReadLine ()
+// #if DEBUG
+//     writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Incoming:    {cmd}"
+// #endif
+//     cmd
