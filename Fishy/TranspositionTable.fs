@@ -1,28 +1,50 @@
-﻿module Transpositions
+﻿module TranspositionTable
 
     open System.Collections.Generic
     open Zobrist
+    open Types
+    open Fishy
 
-    let transpositionTable = Dictionary<int64, (int * int)>()
+    type Key = int64
+    type Score = int
+    type Confidence = int
 
-    let mutable cacheHits = 0
-    let mutable cacheMisses = 0
+    let transpositionTable = Dictionary<Key, Score * Confidence * Move> ()
+
+    let mutable repCacheHits = 0
+    let mutable repCacheMisses = 0
     let resetTranspositionTable () = transpositionTable.Clear ()
 
-    let insertIntoTranspositionTable board state score confidence =
-        let hashKey = initializePositionHash board state
-        transpositionTable.Remove hashKey |> ignore
-        transpositionTable.Add(hashKey, (score, confidence))
+    let insertIntoTranspositionTable board state score confidence move =
+        let hashKey = hashAPosition board state
+        let mutable value = 0, 0, defaultMove
+        match transpositionTable.TryGetValue(hashKey, &value) with
+        | outcome when outcome = true ->
+            let _, oldConfidence, _ = value
+            if oldConfidence < confidence then
+                transpositionTable.Remove hashKey |> ignore
+                transpositionTable.Add(hashKey, (score, confidence, move))
+        | _ ->
+            transpositionTable.Add(hashKey, (score, confidence, move))
         ()
 
-    let transpositionTableLookup board state confidenceRequired : (int * int) option =
-        None
-        // let hashKey = initializePositionHash board state
-        // let mutable value = 0, 0
-        // match transpositionTable.TryGetValue(hashKey, &value) with
-        // | outcome when outcome = true && (snd value >= confidenceRequired) ->
-        //     cacheHits <- cacheHits + 1
-        //     Some ((fst value), 1)
-        // | _ ->
-        //     cacheMisses <- cacheMisses + 1
-        //     None
+    let transpositionTableLookupByBoard board state age : (Score * Confidence * Move) option =
+        let hashKey = hashAPosition board state
+        let mutable value = 0, 0, defaultMove
+        match transpositionTable.TryGetValue(hashKey, &value) with
+        | outcome when outcome = true ->
+            repCacheHits <- repCacheHits + 1
+            Some value
+        | _ ->
+            repCacheMisses <- repCacheMisses + 1
+            None
+
+    let transpositionTableLookupByHash hashKey : (Score * Confidence * Move) option =
+        let mutable value = 0, 0, defaultMove
+        match transpositionTable.TryGetValue(hashKey, &value) with
+        | outcome when outcome = true ->
+            repCacheHits <- repCacheHits + 1
+            Some value
+        | _ ->
+            repCacheMisses <- repCacheMisses + 1
+            None

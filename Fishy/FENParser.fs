@@ -69,7 +69,7 @@ let parseFEN (fen: string) =
         HashKey = 0
     }
 
-    board, { otherState with HashKey = initializePositionHash board otherState }
+    board, { otherState with HashKey = 0L }
 
 let pieceToChar (piece: sbyte) =
     match piece with

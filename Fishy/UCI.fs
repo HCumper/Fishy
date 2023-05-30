@@ -1,9 +1,7 @@
 ﻿module Fish.UCI
 
-open System
-open System.Diagnostics
 open System.Threading.Tasks
-open Transpositions
+open TranspositionTable
 open UCILogger
 open Fishy
 open MakeMove
@@ -11,6 +9,7 @@ open FENParser
 open Evaluation
 open Types
 open LookAhead
+open Zobrist
 
 let engine = "Fishy"
 let version = "0.1"
@@ -30,6 +29,7 @@ let mutable sessionState =
     }
 
 let mutable myColor = White
+let mutable level = 0
 
 let setupPosition (cmd: string) =
     let applyMoves move =
@@ -49,6 +49,7 @@ let setupPosition (cmd: string) =
         let moves = Array.skip 3 cmdList
         if moves.Length % 2 = 0 then myColor <- White else myColor <- Black
         Array.iter (applyMoves) moves
+    writeOutput "position set up"
 
 let go (cmd: string) =
     let cmdList = Array.toList (cmd.Split [|' '|])
@@ -61,12 +62,13 @@ let go (cmd: string) =
     //     match time with
     //     | Some length -> min ((int (cmdList[(int length) + 1])) / 10000) 4
     //     | None -> 4
-    let level = 4
+    level <- 4
     makeLogEntry $"level {level}"
     let valuation = chooseEngineMove sessionBoard level sessionState
-    let pv = List.map convertNumbersToCoordinates (List.rev (snd valuation))
-    writeOutput $"bestmove {List.head pv}"
-
+    get value from transposition table
+    // let pv = List.map convertNumbersToCoordinates (List.rev valuation)
+    // writeOutput $"bestmove {List.head pv}"
+    ()
 let rec processCommand () =
     let mutable exit = false
 
@@ -74,6 +76,10 @@ let rec processCommand () =
         let cmd = readInput ()
 
         match cmd with
+        | cmd when cmd.StartsWith("run") ->
+            initializePlacementValues () |> ignore
+            setupPosition "startpos startpos"
+            go ""
         | cmd when cmd.StartsWith("debug") -> ()
         | cmd when cmd.StartsWith("go") -> go cmd
         | cmd when cmd.StartsWith("isready") -> writeOutput "readyok"
@@ -103,9 +109,32 @@ let rec processCommand () =
             exit <- true
 
 let reportToUCI () =
-    if repMoveNumber > 0 then
-        writePV repTopLevelBestValue repDepth repNodes (int repStopwatch.ElapsedMilliseconds) repMainLine
-        writeCurrmove repCurrMove repMoveNumber (cacheHits / (cacheMisses+1))
+    let rec fetchMovesFromTranspositionTable board state (movesSoFar: Move list) =
+        let hash = hashAPosition board state
+        match transpositionTableLookupByHash hash with
+        | Some (score, confidence, move) ->
+            match confidence with
+            | 0 -> movesSoFar
+            | _ ->
+                let updatedBoard, updateState = makeMove board state move
+                move :: fetchMovesFromTranspositionTable updatedBoard updateState movesSoFar
+        | None -> movesSoFar
+
+    let topLevelScore board state =
+        let hash = hashAPosition board state
+        match transpositionTableLookupByHash hash with
+        | Some (score,_ , _) -> score
+        | None -> failwith "no top level node"
+
+    try
+        if repNodes > 0 then
+            let pv = fetchMovesFromTranspositionTable sessionBoard sessionState []
+        //    let score = topLevelScore sessionBoard sessionState
+            let score = 8
+            writePV score level repNodes (int repStopwatch.ElapsedMilliseconds) pv
+            writeCurrmove repCurrMove repMoveNumber (repCacheHits / (repCacheMisses+1))
+    with
+    | ex -> ()
 
 let rec oneSecondReporting () =
     async {

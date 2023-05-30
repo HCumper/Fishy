@@ -44,7 +44,7 @@ let updatePositionHashWithGlobalPiece (piece: sbyte) file rank positionHash =
     int64 positionHash ^^^ pieceSquareKey
 
 // initializes the hash value based on the given board position
-let initializePositionHash (board: Board) (gameState: GameState) =
+let hashAPosition (board: Board) (gameState: GameState) =
     let mutable (positionHash: int64) = 0
     for rank = 0 to 7 do
         for file = 0 to 7 do
