@@ -11,7 +11,7 @@ let writer = File.AppendText outputFile
 
 let initializeLogging () =
 #if DEBUG
-//    writer.AutoFlush <- true
+    writer.AutoFlush <- true
     writer.WriteLine ""
     writer.WriteLine ""
     writer.WriteLine ""
@@ -63,9 +63,9 @@ let makeLogEntry (cmd: string) =
 #endif
     ()
 
-// let readInput =
-//     let cmd = Console.ReadLine ()
-// #if DEBUG
-//     writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Incoming:    {cmd}"
-// #endif
-//     cmd
+let readInput () =
+    let cmd = Console.ReadLine ()
+#if DEBUG
+    writer.WriteLine $"{DateTime.Now.TimeOfDay.ToString()} Incoming:    {cmd}"
+#endif
+    cmd

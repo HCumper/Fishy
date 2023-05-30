@@ -10,20 +10,19 @@ open UCILogger
 open Transpositions
 open Fishy
 
-let mutable nodes = 0
-let mutable stopwatch = Stopwatch.StartNew()
-
-let mutable mainLine = []
-let mutable topLevelBestValue = 0
-let mutable reportingDepth = 0
-let mutable currMove = defaultMove
-let mutable moveNumber = 0
+let mutable repNodes = 0
+let mutable repStopwatch = Stopwatch.StartNew()
+let mutable repMainLine = []
+let mutable repTopLevelBestValue = 0
+let mutable repDepth = 0
+let mutable repCurrMove = defaultMove
+let mutable repMoveNumber = 0
 
 // The heart of the matter
 let rec negascout board otherState depthLeft currentDepth alpha beta : int * Move list =
 
-    reportingDepth <- currentDepth
-    nodes <- nodes+1
+    repDepth <- currentDepth
+    repNodes <- repNodes+1
     if depthLeft = 0 then
         ((int otherState.ToPlay) * (evaluate board otherState), [])
     else
@@ -32,9 +31,10 @@ let rec negascout board otherState depthLeft currentDepth alpha beta : int * Mov
         let mutable betaCutoff = false
         let mutable chosenMoves = []
 
+        repMoveNumber <- 0
         for move in generateMoves board otherState do
-            moveNumber <- moveNumber + 1
-            currMove <- move
+            repMoveNumber <- repMoveNumber + 1
+            if currentDepth = 1 then repCurrMove <- move
 
             if not betaCutoff then
 
@@ -59,9 +59,9 @@ let rec negascout board otherState depthLeft currentDepth alpha beta : int * Mov
 
                 if -score > bestValue then // this move is the best so far
                     bestValue <- -score
+                    repMainLine <- (List.take (min (currentDepth-1) repMainLine.Length) repMainLine) @ [move] @ (List.rev chosenMoves) // for reporting only
                     chosenMoves <- remainingMoves @ [move]
-                    mainLine <- (List.take (min (currentDepth-1) mainLine.Length) mainLine) @ (List.rev chosenMoves) // for reporting only
-                    if currentDepth = 1 then topLevelBestValue <- max topLevelBestValue bestValue
+                    if currentDepth = 1 then repTopLevelBestValue <- bestValue
 
                 if (max alpha -score) >= beta then
                     // Beta cutoff, prune remaining moves
@@ -74,10 +74,10 @@ let rec negascout board otherState depthLeft currentDepth alpha beta : int * Mov
         bestValue, chosenMoves
 
 let chooseEngineMove board level currentState =
-    stopwatch.Reset()
-    stopwatch.Start()
-    nodes <- 0
+    repStopwatch.Reset()
+    repStopwatch.Start()
+    repNodes <- 0
     resetTranspositionTable ()
-    mainLine <- []
+    repMainLine <- []
     let result = negascout board currentState level 1 -2000000000 2000000000
     result

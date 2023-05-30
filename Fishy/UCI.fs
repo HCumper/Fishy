@@ -71,7 +71,7 @@ let rec processCommand () =
     let mutable exit = false
 
     while not exit do
-        let cmd = Console.ReadLine ()
+        let cmd = readInput ()
 
         match cmd with
         | cmd when cmd.StartsWith("debug") -> ()
@@ -103,8 +103,9 @@ let rec processCommand () =
             exit <- true
 
 let reportToUCI () =
-    writePV topLevelBestValue reportingDepth nodes (int stopwatch.ElapsedMilliseconds) mainLine
-    writeCurrmove currMove moveNumber (cacheHits / (cacheMisses+1))
+    if repMoveNumber > 0 then
+        writePV repTopLevelBestValue repDepth repNodes (int repStopwatch.ElapsedMilliseconds) repMainLine
+        writeCurrmove repCurrMove repMoveNumber (cacheHits / (cacheMisses+1))
 
 let rec oneSecondReporting () =
     async {
