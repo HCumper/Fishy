@@ -64,8 +64,8 @@ let go (cmd: string) =
     //     | None -> 4
     level <- 4
     makeLogEntry $"level {level}"
-    let valuation = chooseEngineMove sessionBoard level sessionState
-    get value from transposition table
+//    let valuation = chooseEngineMove sessionBoard level sessionState
+//    get value from transposition table
     // let pv = List.map convertNumbersToCoordinates (List.rev valuation)
     // writeOutput $"bestmove {List.head pv}"
     ()
@@ -125,16 +125,16 @@ let reportToUCI () =
         match transpositionTableLookupByHash hash with
         | Some (score,_ , _) -> score
         | None -> failwith "no top level node"
-
-    try
-        if repNodes > 0 then
-            let pv = fetchMovesFromTranspositionTable sessionBoard sessionState []
-        //    let score = topLevelScore sessionBoard sessionState
-            let score = 8
-            writePV score level repNodes (int repStopwatch.ElapsedMilliseconds) pv
-            writeCurrmove repCurrMove repMoveNumber (repCacheHits / (repCacheMisses+1))
-    with
-    | ex -> ()
+    ()
+    // try
+    //     if repNodes > 0 then
+    //         let pv = fetchMovesFromTranspositionTable sessionBoard sessionState []
+    //     //    let score = topLevelScore sessionBoard sessionState
+    //         let score = 8
+    //         writePV score level repNodes (int repStopwatch.ElapsedMilliseconds) pv
+    //         writeCurrmove repCurrMove repMoveNumber (repCacheHits / (repCacheMisses+1))
+    // with
+    // | ex -> ()
 
 let rec oneSecondReporting () =
     async {
