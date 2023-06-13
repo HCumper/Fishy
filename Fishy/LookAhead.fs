@@ -9,22 +9,31 @@ open TranspositionTable
 open Fishy
 open System.Collections.Generic
 
-let rec addOneLevel (tree: Tree) (value: int) : Tree =
+let moveAndEvaluate board otherState move =
+    let newBoard, newState = makeMove (Array2D.copy board) otherState move
+    let score = evaluate newBoard newState
+    Leaf(score, move)
+
+let rec addOneLevel board otherState (value: int) (tree: Tree) : Tree =
     match tree with
     | Leaf(_, move) ->
-        let mutable newChildren = []
-        for i = 1 to value do
-            newChildren <- Node(value, move, SortedSet<Tree>([], Comparer<Tree>.Default)) :: newChildren
-        Node(value, move, newChildren)
-    | Node(v, m, children) ->
-        let newChildren = SortedSet<Tree>([], Comparer<Tree>.Default)
-        for child in children do
-            addOneLevel child value
-            |> newChildren.Add
-        Node(v, m, newChildren)
+        let evaluatedChildren = generateMoves board otherState |> List.map (moveAndEvaluate board otherState) 
+        let orderedChildren = Array.sortDescending (Array.ofList evaluatedChildren)
+        let Tree(topScore, _, _) = orderedChildren[0]
+        let topScore =
+            match tree with
+            | Node (topScore, _, _) -> topScore
+            | Leaf (topScore, _) -> topScore
+        Node(topScore, move, orderedChildren)
+    | Node(value, move, children) ->
+        let newChildren = [ for child in children -> addOneLevel board otherState value child ]
+        let orderedChildren = Array.sortDescending (Array.ofList newChildren)
+        let Tree(topScore, bestMove, _) = orderedChildren[0]
+        let topScore, bestMove =
+            match tree with
+            | Node (topScore, bestMove, _) -> topScore, bestMove
+            | Leaf (topScore, bestMove) -> topScore, bestMove
+        Node(topScore, bestMove, orderedChildren)
 
-let buildNTreeIterative : Tree =
+let buildInitialTree : Tree =
     Leaf(0, defaultMove)
-
-let tree = buildNTreeIterative
-let newTree = addOneLevel tree 4

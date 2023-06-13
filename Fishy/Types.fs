@@ -42,6 +42,7 @@ type GameState =
       FullMoveNumber: int
       HashKey: Int64
     }
+    
 type Tree =
     | Node of int * Move * Tree[]
     | Leaf of int * Move
