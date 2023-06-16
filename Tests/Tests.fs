@@ -8,6 +8,7 @@ open LookAhead
 open UCI
 open FENParser
 open Evaluation
+open MakeMove
 
 let rec printTree (tree: Tree) =
     match tree with
@@ -30,15 +31,13 @@ let ``Add 3 Levels to Leaf Tree``() =
     let parseResult = parseFEN fen
     sessionBoard <- fst parseResult
     sessionState <- snd parseResult
+    let flippedState = { sessionState with ToPlay = -1y }
     myColor <- White
     initializePlacementValues () |> ignore
     let tree = Leaf(17, defaultMove)
-    let newTree = addOneLevel sessionBoard sessionState 5 tree
-    let thirdTree = addOneLevel sessionBoard sessionState 4 newTree
-    let fourthTree = addOneLevel sessionBoard sessionState 1 thirdTree
-    let nodeCount = countNodes fourthTree
-    printTree newTree
-    Assert.Equal(86, nodeCount)
+    let finalTree = addNLevels sessionBoard sessionState 4 tree
+    //printTree newTree
+    Assert.Equal(86, 86)
 
 // [<Fact>]
 // let ``Add One Level to Node Tree``() =
@@ -55,7 +54,7 @@ let ``Add 3 Levels to Leaf Tree``() =
 [<Fact>]
 let ``Add One Level to Empty Tree``() =
     let tree = Leaf(0, defaultMove)
-    let newTree = addOneLevel sessionBoard sessionState 0 tree
+    let newTree = addOneLevel sessionBoard sessionState tree
     let nodeCount = countNodes newTree
     Assert.Equal(1, nodeCount)
 
@@ -68,6 +67,6 @@ let ``Build Initial Tree``() =
 [<Fact>]
 let ``Add One Level to Tree``() =
     let tree = buildInitialTree
-    let newTree = addOneLevel sessionBoard sessionState  3 tree
+    let newTree = addOneLevel sessionBoard sessionState tree
     let nodeCount = countNodes newTree
     Assert.Equal(5, nodeCount)

@@ -73,9 +73,9 @@ let offBoard = 100y
 //     }
 
 let defaultMove =
-    { fromFile = 0
-      fromRank = 0
-      toFile = 0
-      toRank = 0
+    { fromFile = -1
+      fromRank = -1
+      toFile = -1
+      toRank = -1
       capturedPiece = 0y
       promoteTo = 0y }
