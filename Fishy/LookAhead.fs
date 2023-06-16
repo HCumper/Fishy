@@ -24,8 +24,9 @@ let rec makeMoveAndAddLevel board state newNode =
         match newNode with
         | Node (_, secondField, _) -> secondField
         | Leaf (_, secondField) -> secondField
-    let newBoard, newState = makeMove board state newMove // not a copy of the board
+    let newBoard, newState = makeMove (Array2D.copy board) state newMove // not a copy of the board
     addOneLevel newBoard newState newNode
+    
 and addOneLevel board otherState (tree: Tree) =
     match tree with
     | Leaf(_, move) ->
@@ -35,23 +36,21 @@ and addOneLevel board otherState (tree: Tree) =
             | White -> Array.sortDescending (Array.ofList evaluatedChildren)
             | Black -> Array.sort (Array.ofList evaluatedChildren)
         let topScore, bestMove = extractFirst2Field orderedChildren[0]
-        Node(topScore, bestMove, orderedChildren)
-    | Node(_, _, children) ->
+        Node(topScore, move, orderedChildren)
+    | Node(_, move, children) ->
         let newChildren = Array.map (makeMoveAndAddLevel board otherState) children 
         let orderedChildren =
             match otherState.ToPlay with
             | White -> Array.sortDescending newChildren
             | Black -> Array.sort newChildren
         let topScore, bestMove = extractFirst2Field orderedChildren[0]
-        Node(topScore, bestMove, orderedChildren)
+        Node(topScore, move, orderedChildren)
 
 let rec addNLevels board otherState levels tree =
     match levels with
     | 0 -> tree
     | numberLeft ->
         let newTree = addOneLevel board otherState tree
-//        let moveToPlay = match newTree with Node (_, move, _) -> move
-//        let newBoard, newState = makeMove board otherState moveToPlay
         addNLevels board otherState (numberLeft-1) newTree        
 
 let buildInitialTree : Tree =
