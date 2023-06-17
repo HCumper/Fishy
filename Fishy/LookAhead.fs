@@ -38,7 +38,7 @@ and addOneLevel board otherState (tree: Tree) =
         Node (topScore, move, orderedChildren)
 
     | Node (_, move, children) ->
-        let newChildren = Array.map (makeMoveAndAddLevel board otherState) children
+        let newChildren = Array.map (fun newNode -> makeMoveAndAddLevel (Array2D.copy board) otherState newNode) children
         let orderedChildren =
             match otherState.ToPlay with
             | White -> Array.sortDescending newChildren

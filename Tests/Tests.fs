@@ -1,4 +1,5 @@
 ﻿module Tests
+open System.Diagnostics
 open Fishy
 open Types
 open System.Collections.Generic
@@ -7,6 +8,7 @@ open LookAhead
 open FENParser
 open Evaluation
 open LookAhead
+open GenerateMoves
 
 let rec printTree (tree: Tree) =
     match tree with
@@ -28,9 +30,15 @@ let ``Add Three Levels to Leaf Tree``() =
  //   myColor <- White
     initializePlacementValues () |> ignore
     let tree = Leaf(0, defaultMove)
-    let finalTree = addNLevels sessionBoard sessionState 4 tree
+    let overallStopwatch = Stopwatch()
+    overallStopwatch.Start()
+    let finalTree = addNLevels sessionBoard sessionState 5 tree
 //    let nodeCount = countNodes newTree
 //    printTree newTree
+    printfn "generation=%A in %A"  generationCount generationStopwatch.ElapsedMilliseconds
+    printfn "evaluation=%A in %A" evaluationCount evaluationStopwatch.ElapsedMilliseconds
+    overallStopwatch.Stop()
+    printfn "overall=%A" overallStopwatch.ElapsedMilliseconds
     Assert.Equal(3, 3)
 
 // [<Fact>]

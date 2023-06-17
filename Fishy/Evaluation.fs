@@ -1,5 +1,6 @@
 ﻿module Evaluation
 
+open System.Diagnostics
 open Fishy
 
 [<Literal>]
@@ -105,6 +106,9 @@ let kingEndgamePlacementTable =
            [| -30; -30; 0; 0; 0; 0; -30; -30 |]
            [| -50; -30; -30; -30; -30; -30; -30; -50 |] |]
 
+let evaluationStopwatch = Stopwatch()
+let mutable evaluationCount = 0
+
 let initializePlacementValues () =
     for rank = 1 to 8 do
         for file = 1 to 8 do
@@ -115,6 +119,10 @@ let initializePlacementValues () =
             queenPlacementValues[file, rank] <- queenPlacementTable[file - 1, rank - 1] * 10
             kingMiddlegamePlacementValues[file, rank] <- kingMiddlegamePlacementTable[file - 1, rank - 1] * 10
             kingEndgamePlacementValues[file, rank] <- kingEndgamePlacementTable[file - 1, rank - 1] * 10
+
+    let evaluationStopwatch = Stopwatch()
+    let mutable evaluationCount = 0
+    ()
 
 let evaluate (board: sbyte[,]) otherState : int =
 
@@ -149,6 +157,8 @@ let evaluate (board: sbyte[,]) otherState : int =
         | _ -> 0
 
     // Evaluate body
+    evaluationCount <- evaluationCount + 1
+    evaluationStopwatch.Start()
     let mutable evaluation = 0
 
     for rank = 1 to 8 do
@@ -159,4 +169,5 @@ let evaluate (board: sbyte[,]) otherState : int =
                 else
                     evaluation <- evaluation - pieceValue board[file, rank] - inversePlacementValue board file rank
 
+    evaluationStopwatch.Stop()
     evaluation
