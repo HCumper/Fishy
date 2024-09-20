@@ -47,8 +47,38 @@ let BlackKing = -6y
 [<Literal>]
 let Empty = 0y
 
-[<Literal>]
-let offBoard = 100y
+let createInitialBoard () =
+    let board = Array2D.createBased 1 1 8 8 0y
+    for i in 1..8 do
+        board.[i, 2] <- 1y  // White pawns
+        board.[i, 7] <- -1y // Black pawns
+    // Place rooks
+    board.[1, 1] <- 2y; board.[8, 1] <- 2y  // White rooks
+    board.[1, 8] <- -2y; board.[8, 8] <- -2y // Black rooks
+    // Place knights
+    board.[2, 1] <- 3y; board.[7, 1] <- 3y  // White knights
+    board.[2, 8] <- -3y; board.[7, 8] <- -3y // Black knights
+    // Place bishops
+    board.[3, 1] <- 4y; board.[6, 1] <- 4y  // White bishops
+    board.[3, 8] <- -4y; board.[6, 8] <- -4y // Black bishops
+    // Place queens
+    board.[4, 1] <- 5y  // White queen
+    board.[4, 8] <- -5y // Black queen
+    // Place kings
+    board.[5, 1] <- 6y  // White king
+    board.[5, 8] <- -6y // Black king
+    board
+
+let createInitialState () =
+    { WhiteCanCastleKingside = true
+      WhiteCanCastleQueenside = true
+      BlackCanCastleKingside = true
+      BlackCanCastleQueenside = true
+      ToPlay = White
+      EPSquare = None
+      HalfMoveClock = 0
+      FullMoveNumber = 1
+      HashKey = 0 }
 
 // // This is a global variable on which actual game moves are made and unmade
 // // board and state have to be global mutables as communication via UCI ia stateful

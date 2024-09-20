@@ -30,7 +30,7 @@ let parseFEN (fen: string) =
     let parseBoard boardStr =
         let mutable rank = 8
         let mutable file = 1
-        let mutable board = Array2D.createBased -1 -1 12 12 offBoard
+        let mutable board = Array2D.createBased 1 1 8 8 0y
 
         for c in boardStr do
             match c with

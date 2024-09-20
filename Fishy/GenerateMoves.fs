@@ -6,14 +6,11 @@ open Types
 // Create list of all available moves on the supplied board
 let generateMoves (board: Board) gameState : Move list =
 
-    let isSquareOnBoard (file, rank) = board[file, rank] <> offBoard
+    let isSquareOnBoard (file, rank) = file >= 1 && file <= 8 && rank >= 1 && rank <= 8
 
-    let isSquareOpponentPiece (movingPiece: sbyte) coordinates =
-        board[fst coordinates, snd coordinates] * movingPiece < 0y
-
-    let isSquareEmptyOrOpponentPiece (movingPiece: sbyte) coordinates =
-        board[fst coordinates, snd coordinates] * movingPiece <= 0y
-
+    let isSquareOpponentPiece (movingPiece: sbyte) (file, rank) = board[file, rank] * movingPiece < 0y
+    let isSquareEmptyOrOpponentPiece (movingPiece: sbyte) (file, rank) = board[file, rank] * movingPiece <= 0y && file >= 1 && file <= 8 && rank >= 1 && rank <= 8
+    
     let convertToMove fromFile fromRank toFile toRank promoteTo capturedPiece : Move =
         {
             fromFile = fromFile
@@ -24,15 +21,15 @@ let generateMoves (board: Board) gameState : Move list =
             capturedPiece = capturedPiece
         }
 
-        // can move into check
-    let generateKingMoves (gameState: GameState) (file, rank) =
+    // can move into check
+    let generateKingMoves (file, rank) =
         let directions = [(1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1)]
-        let mutable (kingMoves: Move list) = []
+        let mutable kingMoves = []
 
         // ordinary king moves
-        let isOppositionAllows (deltaFile, deltaRank) : bool =
+        let isOppositionAllows (deltaFile, deltaRank) =
             if isSquareEmptyOrOpponentPiece gameState.ToPlay (deltaFile, deltaRank) then
-                let availableDirections = List.filter (fun x -> board[(fst x) + deltaFile, (snd x) + deltaRank] <> offBoard) directions
+                let availableDirections = List.filter (fun x -> isSquareOnBoard ((fst x) + deltaFile, (snd x) + deltaRank)) directions
                 List.exists (fun x -> abs board[(fst x) + deltaFile, (snd x) + deltaRank] = WhiteKing) availableDirections
             else
                 false
@@ -42,8 +39,8 @@ let generateMoves (board: Board) gameState : Move list =
             |> List.filter isSquareOnBoard
             |> List.filter (isSquareEmptyOrOpponentPiece gameState.ToPlay)
             |> List.filter isOppositionAllows
-            |> List.map ( fun x -> convertToMove file rank (fst x) (snd x) Empty board[(fst x), (snd x)])
-
+            |> List.map (fun (x, y) -> convertToMove file rank x y Empty board[x, y])
+                     
         // castling
         if gameState.ToPlay = White then
             if gameState.WhiteCanCastleKingside then
@@ -63,69 +60,43 @@ let generateMoves (board: Board) gameState : Move list =
 
         kingMoves
 
-    let generatePawnMoves (gameState: GameState) (file, rank) =
+    let generatePawnMoves (file, rank) =
         let direction = if gameState.ToPlay = Black then -1 else 1
 
         let singleAdvanceMoves =
             if isSquareOnBoard (file, rank + direction) && board[file, rank + direction] = Empty then
                 if rank + direction = 1 || rank + direction = 8 then
-                    [convertToMove file rank file (rank + direction) (WhiteQueen * (sbyte direction)) Empty;
-                     convertToMove file rank file (rank + direction) (WhiteRook * (sbyte direction)) Empty;
-                     convertToMove file rank file (rank + direction) (WhiteBishop * (sbyte direction)) Empty;
-                     convertToMove file rank file (rank + direction) (WhiteKnight * (sbyte direction)) Empty]
-                else
-                    [convertToMove file rank file (rank + direction) Empty Empty]
-            else
-                []
+                    [WhiteQueen; WhiteRook; WhiteBishop; WhiteKnight]
+                    |> List.map (fun promoteTo -> convertToMove file rank file (rank + direction) (promoteTo * sbyte direction) Empty)
+                else [convertToMove file rank file (rank + direction) Empty Empty]
+            else []
 
         let ordinaryCaptureMoves =
-            let leftCapture =
-                if isSquareOnBoard (file - 1, rank + direction) && isSquareOpponentPiece board[file, rank] (file - 1, rank + direction) then
+            let captureMoves deltaFile =
+                if isSquareOnBoard (file + deltaFile, rank + direction) && isSquareOpponentPiece board[file, rank] (file + deltaFile, rank + direction) then
                     if rank + direction = 1 || rank + direction = 8 then
-                        [convertToMove file rank (file-1) (rank + direction) (WhiteQueen * (sbyte direction)) Empty;
-                         convertToMove file rank (file-1) (rank + direction) (WhiteRook * (sbyte direction)) Empty;
-                         convertToMove file rank (file-1) (rank + direction) (WhiteBishop * (sbyte direction)) Empty;
-                         convertToMove file rank (file-1) (rank + direction) (WhiteKnight * (sbyte direction)) Empty]
-                    else
-                        [convertToMove file rank (file - 1) (rank + direction) Empty Empty]
-                else
-                    []
-            let rightCapture =
-                if isSquareOnBoard (file + 1, rank + direction) && isSquareOpponentPiece board[file, rank] (file + 1, rank + direction) then
-                    if rank + direction = 1 || rank + direction = 8 then
-                        [convertToMove file rank (file+1) (rank + direction) (WhiteQueen * (sbyte direction)) Empty;
-                         convertToMove file rank (file+1) (rank + direction) (WhiteRook * (sbyte direction)) Empty;
-                         convertToMove file rank (file+1) (rank + direction) (WhiteBishop * (sbyte direction)) Empty;
-                         convertToMove file rank (file+1) (rank + direction) (WhiteKnight * (sbyte direction)) Empty]
-                    else
-                        [convertToMove file rank (file + 1) (rank + direction) Empty Empty]
-                else
-                    []
-            leftCapture @ rightCapture
+                        [WhiteQueen; WhiteRook; WhiteBishop; WhiteKnight]
+                        |> List.map (fun promoteTo -> convertToMove file rank (file + deltaFile) (rank + direction) (promoteTo * sbyte direction) Empty)
+                    else [convertToMove file rank (file + deltaFile) (rank + direction) Empty Empty]
+                else []
+            captureMoves -1 @ captureMoves 1
 
         let epCaptureMoves =
-            let epLeftCapture =
-                if isSquareOnBoard (file, rank + direction) && gameState.EPSquare = Some (file - 1, rank) then
-                    [convertToMove file rank (file - 1) (rank + direction) Empty Empty]
-                else
-                    []
-            let epRightCapture =
-                if isSquareOnBoard (file, rank + direction) && gameState.EPSquare = Some (file + 1, rank) then
-                    [convertToMove file rank (file + 1) (rank + direction) Empty Empty]
-                else
-                    []
-            epLeftCapture @ epRightCapture
+            let epCapture deltaFile =
+                if gameState.EPSquare = Some (file + deltaFile, rank + direction) then
+                    [convertToMove file rank (file + deltaFile) (rank + direction) Empty Empty]
+                else []
+            epCapture -1 @ epCapture 1
 
         let doubleAdvanceMove =
-            if isSquareOnBoard (file, rank + direction) && board[file, rank + direction] = 0y &&
-               isSquareOnBoard (file, rank + direction * 2) && board[file, rank + direction * 2] = 0y && (rank = 2 || rank = 7) then
+            if isSquareOnBoard (file, rank + direction) && board[file, rank + direction] = Empty &&
+               isSquareOnBoard (file, rank + direction * 2) && board[file, rank + direction * 2] = Empty && (rank = 2 || rank = 7) then
                 [convertToMove file rank file (rank + direction * 2) Empty Empty]
-            else
-                []
+            else []
 
         singleAdvanceMoves @ ordinaryCaptureMoves @ epCaptureMoves @ doubleAdvanceMove
 
-    let generateKnightMoves gameState (file, rank) : Move list =
+    let generateKnightMoves (file, rank) : Move list =
         [ (file + 2, rank + 1)
           (file + 2, rank - 1)
           (file - 2, rank + 1)
@@ -138,12 +109,11 @@ let generateMoves (board: Board) gameState : Move list =
         |> List.filter (isSquareEmptyOrOpponentPiece gameState.ToPlay)
         |> List.map (fun (x, y) -> convertToMove file rank x y Empty board[x, y])
 
-    let generateVectorMoves gameState (file, rank) directions =
+    let generateVectorMoves (file, rank) directions =
 
         let generateMoves deltaFile deltaRank =
             let rec loop newFile newRank (moves: Move list) =
-                let nFile = newFile + deltaFile
-                let nRank = newRank + deltaRank
+                let nFile, nRank = newFile + deltaFile, newRank + deltaRank
 
                 if isSquareOnBoard (nFile, nRank) && isSquareEmptyOrOpponentPiece gameState.ToPlay (nFile, nRank) then
                     let updatedMoves = (convertToMove file rank nFile nRank Empty board[nFile, nRank]) :: moves
@@ -158,7 +128,6 @@ let generateMoves (board: Board) gameState : Move list =
 
         List.collect (fun (deltaFile, deltaRank) -> generateMoves deltaFile deltaRank) directions
 
-
     // generate moves body
     let mutable availableMoves = []
     for rank = 1 to 8 do
@@ -167,12 +136,12 @@ let generateMoves (board: Board) gameState : Move list =
             | x when x * gameState.ToPlay > 0y ->
                 let pieceMoves =
                     match abs x with
-                    | WhiteKnight -> generateKnightMoves gameState (file, rank)
-                    | WhiteBishop -> generateVectorMoves gameState (file, rank) [(1, 1); (1, -1); (-1, 1); (-1, -1)]
-                    | WhiteRook -> generateVectorMoves gameState (file, rank) [(1, 0); (-1, 0); (0, 1); (0, -1)]
-                    | WhiteQueen -> generateVectorMoves gameState (file, rank) [(1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1)]
-                    | WhitePawn -> generatePawnMoves gameState (file, rank)
-                    | WhiteKing -> generateKingMoves gameState (file, rank)
+                    | WhiteKnight -> generateKnightMoves (file, rank)
+                    | WhiteBishop -> generateVectorMoves (file, rank) [(1, 1); (1, -1); (-1, 1); (-1, -1)]
+                    | WhiteRook -> generateVectorMoves (file, rank) [(1, 0); (-1, 0); (0, 1); (0, -1)]
+                    | WhiteQueen -> generateVectorMoves (file, rank) [(1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1)]
+                    | WhitePawn -> generatePawnMoves (file, rank)
+                    | WhiteKing -> generateKingMoves (file, rank)
                     | _ -> []
 
                 availableMoves <- pieceMoves @ availableMoves

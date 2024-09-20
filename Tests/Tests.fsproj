@@ -6,7 +6,9 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Include="MoveGenerationTests.fs" />
         <Compile Include="Tests.fs" />
+        <Compile Include="TranspositionTableTests.fs" />
     </ItemGroup>
 
     <ItemGroup>
@@ -15,7 +17,9 @@
 
     <ItemGroup>
       <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.2" />
-      <PackageReference Include="xunit" Version="2.5.0-pre.22" />
+      <PackageReference Include="NUnit" Version="4.2.2" />
+      <PackageReference Include="NUnit.ConsoleRunner" Version="3.18.1" />
+      <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     </ItemGroup>
 
 </Project>

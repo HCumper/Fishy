@@ -15,7 +15,7 @@ let engine = "Fishy"
 let version = "0.1"
 
 // must retain state of the game as UCI is stateful
-let mutable sessionBoard = Array2D.createBased -1 -1 12 12 offBoard
+let mutable sessionBoard = Array2D.createBased 1 1 8 8 0y
 let mutable sessionState =
     { WhiteCanCastleKingside = true
       WhiteCanCastleQueenside = true
