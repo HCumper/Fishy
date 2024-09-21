@@ -1,7 +1,10 @@
 ﻿module GenerateMoves
 
+open System.Diagnostics
 open Fishy
 open Types
+let generationStopwatch = Stopwatch()
+let mutable generationCount = 0
 
 // Create list of all available moves on the supplied board
 let generateMoves (board: Board) gameState : Move list =
@@ -129,6 +132,9 @@ let generateMoves (board: Board) gameState : Move list =
         List.collect (fun (deltaFile, deltaRank) -> generateMoves deltaFile deltaRank) directions
 
     // generate moves body
+    generationCount <- generationCount + 1
+    generationStopwatch.Start()
+
     let mutable availableMoves = []
     for rank = 1 to 8 do
         for file = 1 to 8 do
@@ -146,5 +152,5 @@ let generateMoves (board: Board) gameState : Move list =
 
                 availableMoves <- pieceMoves @ availableMoves
             | _ -> ()
-
+        generationStopwatch.Stop()
     availableMoves
