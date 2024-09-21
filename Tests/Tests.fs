@@ -3,7 +3,6 @@ open System.Diagnostics
 open Fishy
 open Types
 open System.Collections.Generic
-open Xunit
 open LookAhead
 open FENParser
 open Evaluation
@@ -24,7 +23,8 @@ let rec countNodes (tree: Tree) : int =
     | Leaf(_, _) -> 1
     | Node(_, _, children) -> (children |> (Seq.sumBy countNodes)) + 1
 
-[<Fact>]
+(*
+[<Test>]
 let ``Add Three Levels to Leaf Tree``() =
     let sessionBoard, sessionState = parseFEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
  //   myColor <- White
@@ -40,6 +40,7 @@ let ``Add Three Levels to Leaf Tree``() =
     overallStopwatch.Stop()
     printfn "overall=%A" overallStopwatch.ElapsedMilliseconds
     Assert.Equal(3, 3)
+    *)
 
 // [<Fact>]
 // let ``Add One Level to Node Tree``() =
