@@ -6,12 +6,12 @@ open Types
 open Fishy
     
 let createMove () =
-    { fromFile = 4
-      fromRank = 1
-      toFile = 4
-      toRank = 3
-      capturedPiece = 0y
-      promoteTo = 0y }
+    { FromFile = 4
+      FromRank = 1
+      ToFile = 4
+      ToRank = 3
+      CapturedPiece = 0y
+      PromoteTo = 0y }
     
 [<Test>]
 let ``Insert into transposition table with higher confidence updates entry`` () =
