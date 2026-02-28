@@ -257,6 +257,10 @@ module Coordinates =
         int c.File >= MinFileRank && int c.File <= MaxFileRank &&
         int c.Rank >= MinFileRank && int c.Rank <= MaxFileRank
 
+    let inline isValidFileRank (file : int) (rank : int) =
+        file >= MinFileRank && file <= MaxFileRank &&
+        rank >= MinFileRank && rank <= MaxFileRank
+
     /// Try create from int file/rank (1..8).
     let inline tryCreate (file:int) (rank:int) : Coordinates voption =
         if file >= MinFileRank && file <= MaxFileRank &&

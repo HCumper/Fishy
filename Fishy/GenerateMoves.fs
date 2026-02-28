@@ -12,10 +12,6 @@ let inline private otherColor (c: Color) =
     | Color.White -> Color.Black
     | _ -> Color.White
 
-let inline private onBoard (file:int) (rank:int) =
-    file >= MinFileRank && file <= MaxFileRank &&
-    rank >= MinFileRank && rank <= MaxFileRank
-
 let inline private getAt (board: Board) (file:int) (rank:int) : sbyte =
     // 1-based -> 0-based internal array
     board.[file - 1, rank - 1]
@@ -79,7 +75,7 @@ let generateLegalKnightMoves
 
     let side = pos.State.ToPlay
     // Must be a knight of side to move
-    if not (isKnight piece) || (side = Color.White && isBlack piece) || (side = Color.Black && isWhite piece) then
+    if not (isKnight piece) then
         []
     else
         let moves = ResizeArray<Move>(8)
@@ -122,9 +118,7 @@ let private generateLegalSlidingMoves
     let side = pos.State.ToPlay
 
     // Must be correct piece type AND belong to side to move
-    if not (pieceOk piece) ||
-       (side = Color.White && isBlack piece) ||
-       (side = Color.Black && isWhite piece) then
+    if not (pieceOk piece) then
         []
     else
         // Upper bound: queen from center can have up to 27 pseudo-legal moves.
@@ -135,9 +129,7 @@ let private generateLegalSlidingMoves
             let mutable newRank = int fromSq.Rank + dr
             let mutable blocked = false
 
-            while not blocked &&
-                  newFile >= MinFileRank && newFile <= MaxFileRank &&
-                  newRank >= MinFileRank && newRank <= MaxFileRank do
+            while not blocked && Coordinates.isValidFileRank newFile newRank do
 
                 let toSq = { File = byte newFile; Rank = byte newRank }
                 let target = getC board toSq
@@ -204,12 +196,10 @@ let generateLegalPawnMoves
     let side  = pos.State.ToPlay
 
     // Must be a pawn of side to move
-    if not (isPawn piece) ||
-       (side = Color.White && isBlack piece) ||
-       (side = Color.Black && isWhite piece) then
+    if not (isPawn piece) then
         []
     else
-        let moves = ResizeArray<Move>(16)
+        let moves = ResizeArray<Move>(12)
 
         let forward = if side = Color.White then 1 else -1
         let startRank = if side = Color.White then 2 else 7
@@ -217,9 +207,6 @@ let generateLegalPawnMoves
 
         let file0 = int fromSq.File
         let rank0 = int fromSq.Rank
-
-        let inline onBoard (f:int) (r:int) =
-            f >= MinFileRank && f <= MaxFileRank && r >= MinFileRank && r <= MaxFileRank
 
         let promoKinds = [| Queen; Rook; Bishop; Knight |]  // kind codes (5,4,3,2)
 
@@ -231,7 +218,7 @@ let generateLegalPawnMoves
 
         // ---------- Forward moves ----------
         let oneRank = rank0 + forward
-        if onBoard file0 oneRank then
+        if Coordinates.isValidFileRank file0 oneRank then
             let oneSq = { File = byte file0; Rank = byte oneRank }
             if getC board oneSq = Empty then
                 if oneRank = promoRank then
@@ -254,7 +241,7 @@ let generateLegalPawnMoves
                     // double push from start rank if both squares empty
                     if rank0 = startRank then
                         let twoRank = rank0 + 2 * forward
-                        if onBoard file0 twoRank then
+                        if Coordinates.isValidFileRank file0 twoRank then
                             let twoSq = { File = byte file0; Rank = byte twoRank }
                             if getC board twoSq = Empty then
                                 addLegalMove
@@ -265,10 +252,10 @@ let generateLegalPawnMoves
 
         // ---------- Captures (including promotion captures and en passant) ----------
         let targetRank = rank0 + forward
-        if onBoard file0 targetRank then
+        if Coordinates.isValidFileRank file0 targetRank then
             for df in [| -1; 1 |] do
                 let tf = file0 + df
-                if onBoard tf targetRank then
+                if Coordinates.isValidFileRank tf targetRank then
                     let toSq = { File = byte tf; Rank = byte targetRank }
                     let target = getC board toSq
 
@@ -313,20 +300,14 @@ let generateLegalKingMoves
     let piece = getC board fromSq
     let side  = pos.State.ToPlay
 
-    if not (isKing piece) ||
-       (side = Color.White && isBlack piece) ||
-       (side = Color.Black && isWhite piece) then
+    if not (isKing piece) then
         []
     else
-        let moves = ResizeArray<Move>(10)
+        let moves = ResizeArray<Move>(8)
 
         let oppKingSq =
             if side = Color.White then pos.Kings.BlackKingSq
             else pos.Kings.WhiteKingSq
-
-        let inline onBoard f r =
-            f >= MinFileRank && f <= MaxFileRank &&
-            r >= MinFileRank && r <= MaxFileRank
 
         let inline tryAdd (move: Move) =
             let mutable p = pos
@@ -347,7 +328,7 @@ let generateLegalKingMoves
                     let nf = f0 + df
                     let nr = r0 + dr
 
-                    if onBoard nf nr then
+                    if Coordinates.isValidFileRank nf nr then
                         let toSq = { File = byte nf; Rank = byte nr }
 
                         // NEW: prohibit king adjacency
@@ -376,8 +357,14 @@ let generateLegalKingMoves
             if canCastleK then
                 let fSq = { File = 6uy; Rank = rankB }
                 let gSq = { File = 7uy; Rank = rankB }
-
-                if getC board fSq = Empty && getC board gSq = Empty then
+                let hSq = { File = 8uy; Rank = rankB } 
+                
+                let rookPresent = 
+                    let rook = getC board hSq
+                    (side = Color.White && rook = Rook) ||
+                    (side = Color.Black && rook = -Rook)
+                    
+                if rookPresent && getC board fSq = Empty && getC board gSq = Empty then
                     // NEW: prohibit adjacency on transit/destination squares
                     if not (kingAdjacent fSq oppKingSq) &&
                        not (kingAdjacent gSq oppKingSq) then
@@ -401,8 +388,14 @@ let generateLegalKingMoves
                 let bSq = { File = 2uy; Rank = rankB }
                 let dSq = { File = 4uy; Rank = rankB }
                 let cSq = { File = 3uy; Rank = rankB }
-
-                if getC board bSq = Empty && getC board dSq = Empty && getC board cSq = Empty then
+                let aSq = { File = 1uy; Rank = rankB } 
+                
+                let rookPresent = 
+                    let rook = getC board aSq
+                    (side = Color.White && rook = Rook) ||
+                    (side = Color.Black && rook = -Rook)
+                    
+                if rookPresent && getC board bSq = Empty && getC board dSq = Empty && getC board cSq = Empty then
                     // NEW: prohibit adjacency on transit/destination squares
                     if not (kingAdjacent dSq oppKingSq) &&
                        not (kingAdjacent cSq oppKingSq) then
@@ -461,3 +454,16 @@ let generateAllLegalMoves
                         () // defensive; should not occur
 
     List.ofSeq moves
+    
+// For debugging only
+let rec perft (pos: Position) (depth: int) : uint64 =
+    if depth = 0 then 1UL
+    else
+        let moves = generateAllLegalMoves pos inCheck
+        moves 
+        |> List.sumBy (fun mv ->
+            let mutable p = pos
+            let undo = makeMove &p mv
+            let nodes = perft p (depth - 1)
+            unmakeMove &p mv undo
+            nodes)
