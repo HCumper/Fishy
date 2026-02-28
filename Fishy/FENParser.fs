@@ -5,10 +5,6 @@ open Types
 open BoardHelpers.CastlingRights
 open BoardHelpers.Coordinates
 
-// Assumes:
-// - PieceCode.tryOfFenChar exists and maps piece letters.
-// - CastlingRights.tryOfFen exists.
-
 /// Split a FEN string into its 6 space-separated fields, trimming and removing extra spaces.
 let private splitFen (fen: string) =
     fen.Trim().Split([|' '|], StringSplitOptions.RemoveEmptyEntries)

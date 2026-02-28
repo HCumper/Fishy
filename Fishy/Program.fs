@@ -1,17 +1,9 @@
 ﻿module Fishy
-
-open Types
-open Fen
+open UCIIntegration
 
 [<EntryPoint>]
-let main (_argv: string[]) = 
-    let startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-    let board : Board = Array2D.create 8 8 0y
-
-    match tryLoadPositionFromFen board startFen with
-    | ValueSome position ->
-        printfn "Ready"
-        0
-    | ValueNone ->
-        printfn "Failed to parse FEN."
-        1
+let main _ =
+    waitForDebuggerIfRequested()
+    let api = UCIIntegration.createApi()   // returns EngineApi record
+    UCI.run api 
+    0
