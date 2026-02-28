@@ -412,6 +412,19 @@ let generateLegalKingMoves
 
         List.ofSeq moves
         
+let inline private isCaptureMove (pos: Position) (mv: Move) : bool =
+    let target = getC pos.Board mv.To
+
+    // Normal capture
+    if target <> Empty then true
+    else
+        // En passant capture
+        absKind mv.Piece = Pawn
+        && int mv.From.File <> int mv.To.File
+        && match pos.State.EPSquare with
+           | ValueSome ep -> ep.File = mv.To.File && ep.Rank = mv.To.Rank
+           | ValueNone -> false
+           
 /// Generate all legal moves for the side to move, using the piece-type generators.
 let generateAllLegalMoves
     (pos: Position)
@@ -455,7 +468,16 @@ let generateAllLegalMoves
 
     List.ofSeq moves
     
+let generateAllLegalCaptures
+    (pos: Position)
+    (inCheck: Position -> Color -> bool)
+    : Move list =
+
+    generateAllLegalMoves pos inCheck
+    |> List.filter (isCaptureMove pos)
+    
 // For debugging only
+// Simplistic brute force search for all possible positions.
 let rec perft (pos: Position) (depth: int) : uint64 =
     if depth = 0 then 1UL
     else

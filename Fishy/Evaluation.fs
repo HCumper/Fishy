@@ -1,33 +1,8 @@
 ﻿module Evaluation
 
-open System.Diagnostics
-open Fishy
-
-[<Literal>]
-let pawnValue = 1000
-
-[<Literal>]
-let knightValue = 3100
-
-[<Literal>]
-let bishopValue = 3200
-
-[<Literal>]
-let rookValue = 5000
-
-[<Literal>]
-let queenValue = 9000
-
-[<Literal>]
-let kingValue = 9000
-
-let private pawnPlacementValues = Array2D.createBased 1 1 8 8 0
-let private knightPlacementValues = Array2D.createBased 1 1 8 8 0
-let private bishopPlacementValues = Array2D.createBased 1 1 8 8 0
-let private rookPlacementValues = Array2D.createBased 1 1 8 8 0
-let private queenPlacementValues = Array2D.createBased 1 1 8 8 0
-let private kingMiddlegamePlacementValues = Array2D.createBased 1 1 8 8 0
-let private kingEndgamePlacementValues = Array2D.createBased 1 1 8 8 0
+open BoardHelpers
+open Types
+open PieceCode
 
 let pawnPlacementTable =
     array2D
@@ -106,68 +81,79 @@ let kingEndgamePlacementTable =
            [| -30; -30; 0; 0; 0; 0; -30; -30 |]
            [| -50; -30; -30; -30; -30; -30; -30; -50 |] |]
 
-let evaluationStopwatch = Stopwatch()
-let mutable evaluationCount = 0
+// -----------------------------
+// Material in centipawns
+// -----------------------------
+[<Literal>]
+let PawnV   = 100
+[<Literal>]
+let KnightV = 320
+[<Literal>]
+let BishopV = 330
+[<Literal>]
+let RookV   = 500
+[<Literal>]
+let QueenV  = 900
+[<Literal>]
+let KingV   = 0
 
-let initializePlacementValues () =
-    for rank = 1 to 8 do
-        for file = 1 to 8 do
-            pawnPlacementValues[file, rank] <- pawnPlacementTable[file - 1, rank - 1] * 10
-            knightPlacementValues[file, rank] <- knightPlacementTable[file - 1, rank - 1] * 10
-            bishopPlacementValues[file, rank] <- bishopPlacementTable[file - 1, rank - 1] * 10
-            rookPlacementValues[file, rank] <- rookPlacementTable[file - 1, rank - 1] * 10
-            queenPlacementValues[file, rank] <- queenPlacementTable[file - 1, rank - 1] * 10
-            kingMiddlegamePlacementValues[file, rank] <- kingMiddlegamePlacementTable[file - 1, rank - 1] * 10
-            kingEndgamePlacementValues[file, rank] <- kingEndgamePlacementTable[file - 1, rank - 1] * 10
+// PSTs are assumed already defined as int[,] in cp scale
+let pawnPst   : int[,] = pawnPlacementTable
+let knightPst : int[,] = knightPlacementTable
+let bishopPst : int[,] = bishopPlacementTable
+let rookPst   : int[,] = rookPlacementTable
+let queenPst  : int[,] = queenPlacementTable
+let kingMgPst : int[,] = kingMiddlegamePlacementTable
+let kingEgPst : int[,] = kingEndgamePlacementTable  // unused for now
 
-    let evaluationStopwatch = Stopwatch()
-    let mutable evaluationCount = 0
-    ()
+// -----------------------------
+// Helpers
+// -----------------------------
 
-let evaluate (board: sbyte[,]) otherState : int =
+let inline private pieceValue (kind:sbyte) : int =
+    match kind with
+    | 1y -> PawnV
+    | 2y -> KnightV
+    | 3y -> BishopV
+    | 4y -> RookV
+    | 5y -> QueenV
+    | 6y -> KingV
+    | _  -> 0
 
-    let placementValue (board: sbyte[,]) file rank =
-        match board[file, rank] with
-        | WhitePawn -> pawnPlacementValues[9-rank, file]
-        | WhiteKnight -> knightPlacementValues[9-rank, file]
-        | WhiteBishop -> bishopPlacementValues[9-rank, file]
-        | WhiteRook -> rookPlacementValues[9-rank, file]
-        | WhiteQueen -> queenPlacementValues[9-rank, file]
-        | WhiteKing -> kingMiddlegamePlacementValues[9-rank, file]
-        | _ -> 0
+let inline private pstValue (kind:sbyte) (pstRow:int) (file0:int) : int =
+    match kind with
+    | 1y -> pawnPst.[pstRow, file0]
+    | 2y -> knightPst.[pstRow, file0]
+    | 3y -> bishopPst.[pstRow, file0]
+    | 4y -> rookPst.[pstRow, file0]
+    | 5y -> queenPst.[pstRow, file0]
+    | 6y -> kingMgPst.[pstRow, file0]
+    | _  -> 0
 
-    let inversePlacementValue (board: sbyte[,]) file rank =
-        match board[file, rank] with
-        | BlackPawn -> pawnPlacementValues[rank, file]
-        | BlackKnight -> knightPlacementValues[rank, file]
-        | BlackBishop -> bishopPlacementValues[rank, file]
-        | BlackRook -> rookPlacementValues[rank, file]
-        | BlackQueen -> queenPlacementValues[rank, file]
-        | BlackKing -> kingMiddlegamePlacementValues[rank, file]
-        | _ -> 0
+// board rank0: 0=rank1 .. 7=rank8
+// pst row:     0=rank8 .. 7=rank1
+let inline private pstRowForWhite (rank0:int) = 7 - rank0
+let inline private pstRowForBlack (rank0:int) = rank0
 
-    let pieceValue pieceType =
-        match pieceType with
-        | WhitePawn | BlackPawn -> pawnValue
-        | WhiteKnight | BlackKnight -> knightValue
-        | WhiteBishop | BlackBishop -> bishopValue
-        | WhiteRook | BlackRook -> rookValue
-        | WhiteQueen | BlackQueen -> queenValue
-        | WhiteKing | BlackKing -> kingValue
-        | _ -> 0
+/// Evaluate from SIDE-TO-MOVE viewpoint.
+/// + means good for pos.State.ToPlay.
+let evaluate (pos: Position) : int =
+    let b = pos.Board
+    let mutable whiteScore = 0
 
-    // Evaluate body
-    evaluationCount <- evaluationCount + 1
-    evaluationStopwatch.Start()
-    let mutable evaluation = 0
+    for rank0 = 0 to 7 do
+        for file0 = 0 to 7 do
+            let p = b.[file0, rank0]
+            if p <> Empty then
+                let k = absKind p
+                let mat = pieceValue k
 
-    for rank = 1 to 8 do
-        for file = 1 to 8 do
-            if board[file, rank] <> Empty then
-                if board[file, rank] > Empty then
-                    evaluation <- evaluation + pieceValue board[file, rank] + placementValue board file rank
+                if isWhite p then
+                    let pstRow = pstRowForWhite rank0
+                    whiteScore <- whiteScore + mat + pstValue k pstRow file0
                 else
-                    evaluation <- evaluation - pieceValue board[file, rank] - inversePlacementValue board file rank
+                    let pstRow = pstRowForBlack rank0
+                    whiteScore <- whiteScore - (mat + pstValue k pstRow file0)
 
-    evaluationStopwatch.Stop()
-    evaluation
+    // Negamax-ready
+    if pos.State.ToPlay = Color.White then whiteScore else -whiteScore
