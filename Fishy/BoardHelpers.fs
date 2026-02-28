@@ -280,6 +280,7 @@ module Coordinates =
 //////////////////////////////////////////////////////////////////        
     // Board: sbyte[,] storage using 0-based array internally.
     // Coordinates are 1-based; conversion subtracts 1 for indexing.
+    
 module Board =
     open Types
 
@@ -305,4 +306,125 @@ module Board =
         else
             ValueNone
             
-            
+module Attacks =
+    open Types
+    open Board
+    open PieceCode
+    
+    let inline private otherColor (c: Color) =
+        match c with
+        | Color.White -> Color.Black
+        | _ -> Color.White
+
+    let inline private onBoard (file:int) (rank:int) =
+        file >= MinFileRank && file <= MaxFileRank &&
+        rank >= MinFileRank && rank <= MaxFileRank
+
+    let inline private tryCoord (file:int) (rank:int) : Coordinates voption =
+        if onBoard file rank then
+            ValueSome { File = byte file; Rank = byte rank }
+        else
+            ValueNone
+
+    let inline private isAttacker (attacker: Color) (p: sbyte) =
+        p <> Empty &&
+        ((attacker = Color.White && isWhite p) ||
+         (attacker = Color.Black && isBlack p))
+
+    let private knightOffsets =
+        [|
+            ( 1,  2); ( 2,  1); (-1,  2); (-2,  1)
+            ( 1, -2); ( 2, -1); (-1, -2); (-2, -1)
+        |]
+
+    let private kingOffsets =
+        [|
+            ( 1,  0); ( 1,  1); ( 0,  1); (-1,  1)
+            (-1,  0); (-1, -1); ( 0, -1); ( 1, -1)
+        |]
+
+    let private bishopDirs = [| ( 1,  1); ( 1, -1); (-1,  1); (-1, -1) |]
+    let private rookDirs   = [| ( 1,  0); (-1,  0); ( 0,  1); ( 0, -1) |]
+
+    /// True if `sq` is attacked by any piece of `attacker`.
+    /// Uses 1-based Coordinates and Board.getC.
+    let isSquareAttacked (pos: Position) (sq: Coordinates) (attacker: Color) : bool =
+        let board = pos.Board
+        let f = int sq.File
+        let r = int sq.Rank
+
+        // --- pawn attacks (check from target square backwards to pawn sources) ---
+        let pawnSourceRank = if attacker = Color.White then r - 1 else r + 1
+        match tryCoord (f - 1) pawnSourceRank with
+        | ValueSome c ->
+            let p = getC board c
+            if isAttacker attacker p && absKind p = Pawn then true else
+            match tryCoord (f + 1) pawnSourceRank with
+            | ValueSome c2 ->
+                let p2 = getC board c2
+                isAttacker attacker p2 && absKind p2 = Pawn
+            | ValueNone -> false
+        | ValueNone ->
+            match tryCoord (f + 1) pawnSourceRank with
+            | ValueSome c2 ->
+                let p2 = getC board c2
+                isAttacker attacker p2 && absKind p2 = Pawn
+            | ValueNone -> false
+        |> fun pawnHit ->
+            if pawnHit then true else
+
+            // --- knight attacks ---
+            let mutable hit = false
+            for (df, dr) in knightOffsets do
+                if not hit then
+                    match tryCoord (f + df) (r + dr) with
+                    | ValueSome c ->
+                        let p = getC board c
+                        if isAttacker attacker p && absKind p = Knight then hit <- true
+                    | ValueNone -> ()
+            if hit then true else
+
+            // --- king adjacency ---
+            for (df, dr) in kingOffsets do
+                if not hit then
+                    match tryCoord (f + df) (r + dr) with
+                    | ValueSome c ->
+                        let p = getC board c
+                        if isAttacker attacker p && absKind p = King then hit <- true
+                    | ValueNone -> ()
+            if hit then true else
+
+            // --- sliding rays ---
+            let inline scanRay (df:int) (dr:int) (matches: sbyte -> bool) =
+                let mutable nf = f + df
+                let mutable nr = r + dr
+                let mutable blocked = false
+                while not hit && not blocked && onBoard nf nr do
+                    let p = getC board { File = byte nf; Rank = byte nr }
+                    if p = Empty then
+                        nf <- nf + df
+                        nr <- nr + dr
+                    else
+                        if matches p then hit <- true
+                        blocked <- true
+
+            // bishops/queens (diagonals)
+            for (df, dr) in bishopDirs do
+                if not hit then
+                    scanRay df dr (fun p ->
+                        isAttacker attacker p && (absKind p = Bishop || absKind p = Queen))
+
+            // rooks/queens (orthogonals)
+            for (df, dr) in rookDirs do
+                if not hit then
+                    scanRay df dr (fun p ->
+                        isAttacker attacker p && (absKind p = Rook || absKind p = Queen))
+
+            hit
+
+    /// True if `side`'s king is in check.
+    let inCheck (pos: Position) (side: Color) : bool =
+        let kingSq =
+            if side = Color.White then pos.Kings.WhiteKingSq
+            else pos.Kings.BlackKingSq
+        isSquareAttacked pos kingSq (otherColor side)            
