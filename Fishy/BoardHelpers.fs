@@ -56,7 +56,7 @@ module PieceCode =
     let inline make color kind =
         match color with
         | Color.White -> kind
-        | Color.Black -> -kind
+        | _ -> -kind
 
 
     /// Create signed piece code from Color and PieceKind.
