@@ -15,8 +15,8 @@
         <Compile Include="GenerateMoves.fs" />
         <Content Include="Readme.md" />
         <Compile Include="Evaluation.fs" />
-        <Compile Include="Search.fs" />
         <Compile Include="UCI.fs" />
+        <Compile Include="Search.fs" />
         <Compile Include="UCIIntegration.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>

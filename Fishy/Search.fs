@@ -1,11 +1,13 @@
 ﻿module Search
 
+open System
 open BoardHelpers
 open Types
 open GenerateMoves
 open MakeMove
 open Evaluation
-open BoardHelpers.Attacks 
+open BoardHelpers.Attacks
+open UCILogger.Uci
 
 // Eval must be from SIDE-TO-MOVE viewpoint:
 // + => good for pos.State.ToPlay
@@ -43,7 +45,7 @@ let rec negamax
                 0
         else
             let mutable a = alpha
-            let mutable best = System.Int32.MinValue
+            let mutable best = Int32.MinValue
             let mutable cutoff = false
 
             for mv in moves do
@@ -51,7 +53,7 @@ let rec negamax
                     let mutable p = pos
                     let undo = makeMove &p mv
 
-                    let score = - (negamax p (depth - 1) (-beta) (-a) )
+                    let score = - (negamax p (depth - 1) (-beta) (-a))
 
                     unmakeMove &p mv undo
 
@@ -60,3 +62,38 @@ let rec negamax
                     if a >= beta then cutoff <- true
 
             best
+
+let private depthFromRequest (req: SearchRequest) =
+    match req.Depth with
+    | ValueSome d when d > 0 -> d
+    | _ -> 5
+
+/// Picks best move using negamax and UCI depth (default 4 if not provided).
+let chooseBestMove (pos: Position) (req: SearchRequest) : Move voption =
+    let depth = depthFromRequest req
+    let moves = generateAllLegalMoves pos inCheck
+
+    match moves with
+    | [] -> ValueNone
+    | _ ->
+        let mutable bestMove = ValueNone
+        let mutable bestScore = Int32.MinValue
+        let mutable alpha = Int32.MinValue + 1
+        let beta = Int32.MaxValue
+
+        for mv in moves do
+            let mutable p = pos
+            let undo = makeMove &p mv
+
+            let score = - (negamax p (depth - 1) (-beta) (-alpha))
+
+            unmakeMove &p mv undo
+
+            if score > bestScore then
+                bestScore <- score
+                bestMove <- ValueSome mv
+
+            if score > alpha then
+                alpha <- score
+
+        bestMove

@@ -7,6 +7,8 @@
     open Types
     open Fen
     open UCILogger.Uci
+    open MakeMove
+    open Search
     
     let private startFen =
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -31,21 +33,6 @@
         stopFlag <- false
         current <- None
 
-    let private setPosition (fen:string) (moves:string list) =
-        stopFlag <- false
-
-        let basePos =
-            if fen = "startpos" then loadFen startFen
-            else loadFen fen
-
-        match basePos with
-        | None ->
-            current <- None
-        | Some pos ->
-            // TODO: apply the moves list (UCI moves like "e2e4") when you implement parsing.
-            // For now, ignore "moves" and just keep the base position.
-            current <- Some pos
-
     let moveToUci (mv:Move) : string =
         // Converts your Move (From/To are 1-based Coordinates) to UCI "e2e4" plus promotion.
         let fileChar (f:byte) = char (int 'a' + int f - 1)
@@ -68,13 +55,42 @@
                 | _  -> ""  // defensive
         $"{f1}{r1}{f2}{r2}{promo}"
 
-    let private pickAnyLegalMoveUci (pos:Position) : string =
-        // Minimal: generate all legal moves and return the first as UCI.
-        // This requires you to implement moveToUci below.
-        let moves = GenerateMoves.generateAllLegalMoves pos Attacks.inCheck
-        match moves with
-        | [] -> "0000"
-        | mv :: _ -> moveToUci mv
+    // Apply a UCI move list to a freshly initialized start position.
+    // Returns None if any move is invalid in the current position.
+    let private applyUciMovesFromStartPos (moves:string list) : Position option =
+        match loadFen startFen with
+        | None -> None
+        | Some startPos ->
+            let mutable p = startPos
+            let mutable ok = true
+
+            for uci in moves do
+                if ok then
+                    let legalMoves = GenerateMoves.generateAllLegalMoves p Attacks.inCheck
+                    let wanted = uci.Trim().ToLowerInvariant()
+
+                    match legalMoves |> List.tryFind (fun mv -> moveToUci mv = wanted) with
+                    | Some mv ->
+                        let _undo = makeMove &p mv
+                        ()
+                    | None ->
+                        ok <- false
+
+            if ok then Some p else None
+
+    let private setPosition (fen:string) (moves:string list) =
+        stopFlag <- false
+
+        if fen = "startpos" then
+            current <- applyUciMovesFromStartPos moves
+        else
+            let basePos = loadFen fen
+            match basePos with
+            | None ->
+                current <- None
+            | Some pos ->
+                // Optional later: apply moves on top of FEN as well.
+                current <- Some pos
 
     let private search (req:SearchRequest) : string * string voption =
         stopFlag <- false
@@ -83,10 +99,9 @@
         | None ->
             "0000", ValueNone
         | Some pos ->
-            // TODO: replace with real search.
-            // For now, just pick any legal move so Fritz sees a valid response.
-            let best = pickAnyLegalMoveUci pos
-            best, ValueNone
+            match chooseBestMove pos req with
+            | ValueSome mv -> moveToUci mv, ValueNone
+            | ValueNone -> "0000", ValueNone
 
     let private stop () =
         stopFlag <- true

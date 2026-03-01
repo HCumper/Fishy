@@ -4,7 +4,7 @@ open System
 open System.IO
 open Types
 
-let outputFile = @".\ucilog.txt"
+let outputFile = @"I:\\temp\\uci.log"
 #if DEBUG
 let writer = File.AppendText outputFile
 #endif
@@ -57,7 +57,7 @@ let makeLogEntry (cmd: string) =
     ()
 
 let rec readInput () =
-    let cmd = readInput ()
+    let cmd = Console.ReadLine ()
 #if DEBUG
     writer.WriteLine $"{DateTime.Now.TimeOfDay} Incoming: {cmd}"
 #endif
@@ -66,10 +66,7 @@ let rec readInput () =
     
 module Uci =
 
-    open System
-    open System.IO
     open System.Globalization
-    open System.Threading
 
     type UciOption =
         | Spin of name:string * defaultValue:int * minValue:int * maxValue:int
@@ -127,7 +124,7 @@ module Uci =
         let mutable nodes = ValueNone
         let mutable mate = ValueNone
         let mutable infinite = false
-
+        
         let rec loop ts =
             match ts with
             | [] -> ()
@@ -232,6 +229,7 @@ module Uci =
                 match tokens with
                 | [] -> ()
                 | "uci" :: _ ->
+                    initializeLogging()
                     writeLine output $"id name {api.Name}"
                     writeLine output $"id author {api.Author}"
                     for opt in api.Options do
