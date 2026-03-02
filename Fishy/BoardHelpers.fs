@@ -190,13 +190,12 @@ module CastlingRights =
     let inline clearWhiteAll r = r |> clearWK |> clearWQ
     let inline clearBlackAll r = r |> clearBK |> clearBQ
 
-    // 1-based coordinates (File/Rank = 1..8)
-    let a1 = { File = 1uy; Rank = 1uy }
-    let e1 = { File = 5uy; Rank = 1uy }
-    let h1 = { File = 8uy; Rank = 1uy }
-    let a8 = { File = 1uy; Rank = 8uy }
-    let e8 = { File = 5uy; Rank = 8uy }
-    let h8 = { File = 8uy; Rank = 8uy }
+    let a1 = { File = 0uy; Rank = 0uy }
+    let e1 = { File = 4uy; Rank = 0uy }
+    let h1 = { File = 7uy; Rank = 0uy }
+    let a8 = { File = 0uy; Rank = 7uy }
+    let e8 = { File = 4uy; Rank = 7uy }
+    let h8 = { File = 7uy; Rank = 7uy }
 
     let inline sameSq a b =
         a.File = b.File && a.Rank = b.Rank
@@ -248,11 +247,11 @@ module CastlingRights =
     
 ////////////////////////////////////////////////////////////////
     
-// Coordinates: 1-based (File/Rank = 1..8). Provides validated and unchecked creation.
+// Coordinates: 1-based (File/Rank = 0..7). Provides validated and unchecked creation.
 module Coordinates =
     open Types
 
-    /// True if coordinate is within 1..8.
+    /// True if coordinate is within 0..7.
     let inline isValid (c: Coordinates) =
         int c.File >= MinFileRank && int c.File <= MaxFileRank &&
         int c.Rank >= MinFileRank && int c.Rank <= MaxFileRank
@@ -260,22 +259,27 @@ module Coordinates =
     let inline isValidFileRank (file : int) (rank : int) =
         file >= MinFileRank && file <= MaxFileRank &&
         rank >= MinFileRank && rank <= MaxFileRank
-
-    /// Try create from int file/rank (1..8).
-    let inline tryCreate (file:int) (rank:int) : Coordinates voption =
-        if file >= MinFileRank && file <= MaxFileRank &&
-           rank >= MinFileRank && rank <= MaxFileRank then
+        
+    /// Safe constructor with bounds check.
+    let inline tryCreate (file:int) (rank:int) : ValueOption<Coordinates> =
+        if file >= 0 && file < 8 && rank >= 0 && rank < 8 then
             ValueSome { File = byte file; Rank = byte rank }
         else
             ValueNone
-
+    
+    /// Checked constructor (throws if invalid).
+    let inline createChecked (file:int) (rank:int) : Coordinates =
+        match tryCreate file rank with
+        | ValueSome c -> c
+        | ValueNone -> invalidArg "Coordinates" $"Invalid coordinate ({file},{rank})"
+        
     /// Construct from two bytes (no validation).
     let inline createBytes (file:byte) (rank:byte) : Coordinates =
         { File = file; Rank = rank }
 
     /// Construct from two ints (no validation).
     let inline createInts (file:int) (rank:int) : Coordinates =
-        { File = byte file; Rank = byte rank }
+        createChecked file rank
 
     /// Unsafe constructor when caller guarantees validity (hot path).
     let inline createUnchecked (file:byte) (rank:byte) : Coordinates =
@@ -293,20 +297,20 @@ module Board =
         rank >= MinFileRank && rank <= MaxFileRank
 
     let inline get (board: Board) file rank =
-        board.[file - 1, rank - 1]
+        board.[file , rank ]
 
     let inline set (board: Board) file rank piece =
-        board.[file - 1, rank - 1] <- piece
+        board.[file , rank ] <- piece
 
     let inline getC (board: Board) (c: Coordinates) : sbyte =
-        board.[int c.File - 1, int c.Rank - 1]
+        board.[int c.File , int c.Rank ]
 
     let inline setC (board: Board) (c: Coordinates) (piece: sbyte) : unit =
-        board.[int c.File - 1, int c.Rank - 1] <- piece
+        board.[int c.File , int c.Rank ] <- piece
 
     let inline tryGet (board: Board) (file: int) (rank: int) : sbyte voption =
         if isOnBoard file rank then
-            ValueSome board[file - 1, rank - 1]
+            ValueSome board.[file , rank ]
         else
             ValueNone
             

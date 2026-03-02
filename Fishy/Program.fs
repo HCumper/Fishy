@@ -6,9 +6,6 @@ module Program
 
 open UCILogger.Uci
 open UCIIntegration
-open System
-open System.Diagnostics
-open System.Threading
 
 [<EntryPoint>]
 let main _ =

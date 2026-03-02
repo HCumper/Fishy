@@ -22,7 +22,10 @@ let inline private otherColor (c: Color) =
 /// Mate score convention (in centipawns). Larger than any plausible eval.
 [<Literal>]
 let MateScore = 30000
+[<Literal>]
+let InCheckPenalty = 100
 
+/// Fishy's heart
 /// Negamax with alpha-beta.
 /// Returns score from the SIDE-TO-MOVE viewpoint at the root `pos`.
 let rec negamax
@@ -40,7 +43,7 @@ let rec negamax
 
         if List.isEmpty moves then
             if inCheck pos side then
-                -MateScore + (100 - depth)
+                -MateScore + (InCheckPenalty - depth)
             else
                 0
         else
@@ -78,8 +81,8 @@ let chooseBestMove (pos: Position) (req: SearchRequest) : Move voption =
     | _ ->
         let mutable bestMove = ValueNone
         let mutable bestScore = Int32.MinValue
-        let mutable alpha = Int32.MinValue + 1
-        let beta = Int32.MaxValue
+        let mutable alpha = -MateScore - 1
+        let beta = MateScore + 1
 
         for mv in moves do
             let mutable p = pos

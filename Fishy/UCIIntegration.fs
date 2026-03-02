@@ -35,8 +35,8 @@
 
     let moveToUci (mv:Move) : string =
         // Converts your Move (From/To are 1-based Coordinates) to UCI "e2e4" plus promotion.
-        let fileChar (f:byte) = char (int 'a' + int f - 1)
-        let rankChar (r:byte) = char (int '0' + int r)
+        let fileChar (f:byte) = char (int 'a' + int f)
+        let rankChar (r:byte) = char (int '1' + int r)
 
         let f1 = fileChar mv.From.File
         let r1 = rankChar mv.From.Rank

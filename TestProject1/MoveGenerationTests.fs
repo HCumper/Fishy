@@ -1,12 +1,5 @@
 ﻿module TestProject1.MoveGenerationTests
 
-/// <summary>
-/// Move generation tests using FEN positions.
-/// NOTE: Coordinates are 1-indexed throughout these tests:
-///   - Files: a=1, b=2, c=3, d=4, e=5, f=6, g=7, h=8
-///   - Ranks: 1, 2, 3, 4, 5, 6, 7, 8
-/// </summary>
-
 open Types
 open Fen
 open BoardHelpers
@@ -14,17 +7,26 @@ open GenerateMoves
 open Attacks
 open NUnit.Framework
 
+// <summary>
+// Move generation tests using FEN positions.
+// Coordinates are 0-indexed throughout these tests:
+//   - Files: a=0, b=1, ..., h=7
+//   - Ranks: 1=0, 2=1, ..., 8=7
+// </summary>
+
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-/// Parse a square string like "e4" into 1-indexed coordinates (5, 4)
+/// Parse a square string like "e4" into 0-indexed components (file, rank) = (4, 3)
 let parseSquare (sq: string) : int * int =
     if sq.Length <> 2 then
         failwithf "Invalid square notation: %s" sq
-    let file = int (System.Char.ToLower sq.[0]) - int 'a' + 1
-    let rank = int sq.[1] - int '0'
-    (file, rank)
+    let f = int (System.Char.ToLower sq.[0]) - int 'a'   // 0..7
+    let r = int sq.[1] - int '1'                         // 0..7
+    if f < 0 || f > 7 || r < 0 || r > 7 then
+        failwithf "Square out of range: %s" sq
+    (f, r)
 
 /// Initialize a fresh 8x8 board from a FEN string.
 let private initBoardFromFen (fen: string) : ValueOption<Position> =
@@ -58,7 +60,7 @@ type AllMovesCase =
 // ============================================================================
 
 type TestData() =
-    static member KnightTestCases 
+    static member KnightTestCases
         with get() : MoveGenCase list =
             [
                 { Name = "Knight moves from starting position (g1 -> 2 moves)"
@@ -373,7 +375,7 @@ let private runMoveGenCase (c: MoveGenCase) =
         let (file, rank) = parseSquare c.FromSquare
         let fromSq = Coordinates.createInts file rank
         let moves = c.Gen pos fromSq inCheck
-        Assert.That(moves.Length, Is.EqualTo(c.ExpectedMoves), 
+        Assert.That(moves.Length, Is.EqualTo(c.ExpectedMoves),
             $"{c.Name} - Expected {c.ExpectedMoves} moves from {c.FromSquare}, got {moves.Length}")
     )
 
@@ -422,21 +424,21 @@ let ``All legal moves generation`` (case: AllMovesCase) =
 
 [<Test>]
 let ``Square parser validation`` () =
-    let testCases = 
+    let testCases =
         [
-            ("a1", (1, 1))
-            ("h8", (8, 8))
-            ("e4", (5, 4))
-            ("d2", (4, 2))
+            ("a1", (0, 0))
+            ("h8", (7, 7))
+            ("e4", (4, 3))
+            ("d2", (3, 1))
         ]
-    
+
     for (input, expected) in testCases do
         let result = parseSquare input
         Assert.That(result, Is.EqualTo(expected), $"parseSquare {input}")
 
 [<Test>]
 let ``FEN parser handles all test positions`` () =
-    let allFens = 
+    let allFens =
         List.concat [
             TestData.KnightTestCases |> List.map (fun c -> c.Fen)
             TestData.BishopTestCases |> List.map (fun c -> c.Fen)
@@ -447,10 +449,10 @@ let ``FEN parser handles all test positions`` () =
             TestData.AllMovesTestCases |> List.map (fun c -> c.Fen)
         ]
         |> List.distinct
-    
+
     for fen in allFens do
         match initBoardFromFen fen with
-        | ValueSome _ -> ()  // Success
+        | ValueSome _ -> ()
         | ValueNone -> Assert.Fail($"Failed to parse FEN: {fen}")
 
 // ============================================================================
@@ -460,58 +462,48 @@ let ``FEN parser handles all test positions`` () =
 [<Test>]
 let ``Underpromotion generates all four piece types`` () =
     withPosition "7k/4P3/8/8/8/8/8/4K3 w - - 0 1" "Underpromotion test" (fun pos ->
-        let fromSq = Coordinates.createInts 5 7  // e7
+        let fromSq = Coordinates.createInts 4 6  // e7
         let moves = generateLegalPawnMoves pos fromSq inCheck
-        
-        // Should be 4 moves: e8=Q, e8=R, e8=B, e8=N
+
         Assert.That(moves.Length, Is.EqualTo(4))
-        
-        // Verify all four promotion types are present
+
         let promotionTypes = moves |> List.map (fun m -> m.PromoteTo) |> List.distinct
-        Assert.That(promotionTypes.Length, Is.EqualTo(4), 
-            "Should have 4 different promotion piece types")
+        Assert.That(promotionTypes.Length, Is.EqualTo(4), "Should have 4 different promotion piece types")
     )
 
 [<Test>]
 let ``Castling rights are respected`` () =
-    // Position where castling would be legal if rights were present
     let fenNoRights = "2k5/8/8/8/8/8/8/R3K2R w - - 0 1"
     let fenWithRights = "2k5/8/8/8/8/8/8/R3K2R w KQ - 0 1"
-    
+
     withPosition fenNoRights "No castling rights" (fun pos ->
-        let coord = Coordinates.createInts 5 1  // e1
+        let coord = Coordinates.createInts 4 0  // e1
         let moves = generateLegalKingMoves pos coord inCheck
-        let castlingMoves = moves |> List.filter (fun m -> 
-            // Castling is king moving 2 squares
-            abs (int (m.To.File - m.From.File)) = 2
-        )
-        Assert.That(castlingMoves.Length, Is.EqualTo(0), 
-            "Should have no castling moves without rights")
+        let castlingMoves =
+            moves |> List.filter (fun m -> abs (int (m.To.File - m.From.File)) = 2)
+        Assert.That(castlingMoves.Length, Is.EqualTo(0), "Should have no castling moves without rights")
     )
-    
+
     withPosition fenWithRights "With castling rights" (fun pos ->
         let moves = generateAllLegalMoves pos inCheck
-        let castlingMoves = moves |> List.filter (fun m -> 
-            abs (int (m.To.File - m.From.File)) = 2
-        )
-        Assert.That(castlingMoves.Length, Is.EqualTo(2), 
-            "Should have both kingside and queenside castling")
+        let castlingMoves =
+            moves |> List.filter (fun m -> abs (int (m.To.File - m.From.File)) = 2)
+        Assert.That(castlingMoves.Length, Is.EqualTo(2), "Should have both kingside and queenside castling")
     )
 
 [<Test>]
 let ``Moves from invalid square return empty list`` () =
     withPosition "k7/8/8/8/4K3/8/8/8 w - - 0 1" "Invalid square test" (fun pos ->
-        // Try to generate moves from an empty square
-        let fromSq = Coordinates.createInts 4 4  // d4 (empty)
+        let fromSq = Coordinates.createInts 4 4  // e5? (doesn't matter; it's empty here)
         let knightMoves = generateLegalKnightMoves pos fromSq inCheck
         let bishopMoves = generateLegalBishopMoves pos fromSq inCheck
-        let rookMoves = generateLegalRookMoves pos fromSq inCheck
-        
+        let rookMoves   = generateLegalRookMoves pos fromSq inCheck
+
         Assert.That(knightMoves.Length, Is.EqualTo(0))
         Assert.That(bishopMoves.Length, Is.EqualTo(0))
         Assert.That(rookMoves.Length, Is.EqualTo(0))
     )
-    
+
 type PerftCase =
     { Name: string
       Fen: string
@@ -521,7 +513,8 @@ let private runCase (c: PerftCase) =
     match initBoardFromFen c.Fen with
     | ValueSome pos ->
         for depth, nodes in c.Expected do
-            let got = perft pos depth
+            // perft returns uint64 in your GenerateMoves; cast for comparison to int64 expectations
+            let got = int64 (perft pos depth)
             Assert.That(got, Is.EqualTo(nodes), $"{c.Name}: depth {depth}")
     | ValueNone ->
         Assert.Fail($"FEN parse failed: {c.Name}")
@@ -532,32 +525,26 @@ let ``Perft standard positions to depth 4`` () =
 
     let cases : PerftCase list =
         [
-            // Initial position
             { Name = "Initial"
               Fen  = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
               Expected = d4 20L 400L 8902L 197281L }
 
-            // Position 2 (Kiwipete)
             { Name = "Position 2"
               Fen  = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
               Expected = d4 48L 2039L 97862L 4085603L }
 
-            // Position 3
             { Name = "Position 3"
               Fen  = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"
               Expected = d4 14L 191L 2812L 43238L }
 
-            // Position 4
             { Name = "Position 4"
               Fen  = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1"
               Expected = d4 6L 264L 9467L 422333L }
 
-            // Position 5
             { Name = "Position 5"
               Fen  = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
               Expected = d4 44L 1486L 62379L 2103487L }
 
-            // Position 6
             { Name = "Position 6"
               Fen  = "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"
               Expected = d4 46L 2079L 89890L 3894594L }

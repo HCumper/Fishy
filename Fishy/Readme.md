@@ -76,3 +76,29 @@ Engine will start and wait.
 Rider: Run → Attach to Process… → select MyFSharpEngine.exe and attach.
 
 Clear WAIT_FOR_DEBUGGER when you no longer need startup waiting.
+
+
+
+Recommended Implementation Order
+Phase 1 (Critical - Do First):
+
+✅ Add transposition table
+✅ Add basic move ordering (MVV-LVA)
+✅ Add quiescence search
+
+Phase 2 (Important - Do Soon):
+
+Add iterative deepening
+Add time management
+Add UCI info output
+Add check extensions
+
+Phase 3 (Optimization - Do Later):
+
+Add null move pruning
+Add late move reductions
+Add aspiration windows
+Add killer moves
+Add history heuristic
+
+Parallelism?

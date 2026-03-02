@@ -16,10 +16,10 @@ type Board = sbyte[,]
 let BoardSize = 8
 
 [<Literal>]
-let MinFileRank = 1
+let MinFileRank = 0
 
 [<Literal>]
-let MaxFileRank = 8
+let MaxFileRank = 7
 
 // board is laid out column, row i.e. file, rank matching chess notation e4
 [<Struct; IsReadOnly>]

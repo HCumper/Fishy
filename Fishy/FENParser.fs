@@ -5,35 +5,28 @@ open Types
 open BoardHelpers.CastlingRights
 open BoardHelpers.Coordinates
 
-/// Split a FEN string into its 6 space-separated fields, trimming and removing extra spaces.
 let private splitFen (fen: string) =
     fen.Trim().Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
 
-/// Parse the "side to move" FEN field ("w"/"b") into a Color.
 let private parseSideToMove (s: string) : ValueOption<Color> =
     match s with
     | "w" -> ValueSome Color.White
     | "b" -> ValueSome Color.Black
     | _   -> ValueNone
 
-/// Try to parse an unsigned 16-bit integer from a string, returning ValueNone on failure.
 let private tryParseUInt16 (s: string) : ValueOption<uint16> =
     match UInt16.TryParse(s) with
     | true, v -> ValueSome v
     | _       -> ValueNone
 
-/// Try to parse a byte (0..255) from a string, returning ValueNone on failure.
 let private tryParseByte (s: string) : ValueOption<byte> =
     match Byte.TryParse(s) with
     | true, v -> ValueSome v
     | _       -> ValueNone
 
-/// Parse the en-passant target square field:
-/// "-" => ValueSome ValueNone; "e3" style => ValueSome (ValueSome Coordinates); invalid => ValueNone.
+/// EP field: "-" => ValueSome ValueNone; "e3" => ValueSome(ValueSome coords); invalid => ValueNone.
+/// Coordinates are 0-based: a1=(0,0), h8=(7,7).
 let private tryParseEPSquare (s: string) : ValueOption<ValueOption<Coordinates>> =
-    // Returns ValueSome(ValueNone) for "-" (valid, no ep)
-    // Returns ValueSome(ValueSome coord) for a square
-    // Returns ValueNone for invalid
     if s = "-" then ValueSome ValueNone
     elif s.Length = 2 then
         let fileChar = s.[0]
@@ -41,12 +34,13 @@ let private tryParseEPSquare (s: string) : ValueOption<ValueOption<Coordinates>>
 
         let file =
             match fileChar with
-            | c when c >= 'a' && c <= 'h' -> int c - int 'a' + 1
-            | c when c >= 'A' && c <= 'H' -> int c - int 'A' + 1
+            | c when c >= 'a' && c <= 'h' -> int c - int 'a'
+            | c when c >= 'A' && c <= 'H' -> int c - int 'A'
             | _ -> -1
+
         let rank =
             match rankChar with
-            | c when c >= '1' && c <= '8' -> int c - int '0'
+            | c when c >= '1' && c <= '8' -> int c - int '1'
             | _ -> -1
 
         match BoardHelpers.Coordinates.tryCreate file rank with
@@ -55,77 +49,60 @@ let private tryParseEPSquare (s: string) : ValueOption<ValueOption<Coordinates>>
     else
         ValueNone
 
-/// Set every square in the board array to Empty.
 let private clearBoard (board: Board) =
     for f = 0 to 7 do
         for r = 0 to 7 do
             board.[f, r] <- BoardHelpers.PieceCode.Empty
 
-/// Parse the piece placement field (ranks 8..1) into the provided board and return king squares if valid.
+/// Parse placement (ranks 8..1) into 0-based board.[file,rank] with rank 7..0.
+/// Returns king squares in 0-based Coordinates.
 let private tryParsePlacement (placement: string) (board: Board) : ValueOption<KingSquares> =
-    // FEN placement runs from rank 8 down to rank 1
-    // Our Coordinates are 1..8 with Rank=1 as first rank.
     clearBoard board
 
-    let mutable file = 1
-    let mutable rank = 8
+    let mutable file = 0   // 0..8 while filling
+    let mutable rank = 7   // 7..0
 
     let mutable wkOpt : ValueOption<Coordinates> = ValueNone
     let mutable bkOpt : ValueOption<Coordinates> = ValueNone
+    let mutable ok = true
 
-    /// Write a piece code into the 0-based board array using 1-based file/rank.
-    let inline setSq (f:int) (r:int) (p:sbyte) =
-        // board is 0-based array, coords are 1-based
-        board.[f - 1, r - 1] <- p
-
-    /// Track white/black king coordinates while parsing placement.
     let inline recordKing (p:sbyte) (f:int) (r:int) =
         if p = 6y then wkOpt <- ValueSome { File = byte f; Rank = byte r }
         elif p = -6y then bkOpt <- ValueSome { File = byte f; Rank = byte r }
 
-    let mutable ok = true
-
     for ch in placement do
-        if not ok then () else
-
-        match ch with
-        | '/' ->
-            if file <> 9 then ok <- false
-            else
-                file <- 1
-                rank <- rank - 1
-                if rank < 1 then ok <- false
-
-        | c when c >= '1' && c <= '8' ->
-            let n = int ch - int '0'
-            if file + n - 1 > 8 then ok <- false
-            else
-                // skip n empties
-                file <- file + n
-
-        | _ ->
-            match BoardHelpers.PieceCode.tryOfFenChar ch with
-            | ValueNone -> ok <- false
-            | ValueSome p ->
-                if file > 8 || rank < 1 then ok <- false
+        if ok then
+            match ch with
+            | '/' ->
+                if file <> 8 then ok <- false
                 else
-                    setSq file rank p
-                    recordKing p file rank
-                    file <- file + 1
+                    file <- 0
+                    rank <- rank - 1
+                    if rank < 0 then ok <- false
 
-    // After reading, must end exactly at file=9 and rank=1 (or rank>=1 with correct slashes)
-    if ok && file = 9 && rank = 1 then
+            | c when c >= '1' && c <= '8' ->
+                let n = int c - int '0'
+                if file + n > 8 then ok <- false
+                else file <- file + n
+
+            | _ ->
+                match BoardHelpers.PieceCode.tryOfFenChar ch with
+                | ValueNone -> ok <- false
+                | ValueSome p ->
+                    if file >= 8 || rank < 0 then ok <- false
+                    else
+                        board.[file, rank] <- p
+                        recordKing p file rank
+                        file <- file + 1
+
+    if ok && rank = 0 && file = 8 then
         match wkOpt, bkOpt with
-        | ValueSome wk, ValueSome bk ->
-            ValueSome { WhiteKingSq = wk; BlackKingSq = bk }
-        | _ ->
-            // invalid position if a king is missing
-            ValueNone
+        | ValueSome wk, ValueSome bk -> ValueSome { WhiteKingSq = wk; BlackKingSq = bk }
+        | _ -> ValueNone
     else
         ValueNone
-
-/// Parse a full FEN string into a Position (board + state + kings).
-/// HashKey is set to 0L here - compute after load
+        
+/// Parse a full FEN string into a Position. HashKey remains 0L; compute after load if needed.
 let tryLoadPositionFromFen (board: Board) (fen: string) : ValueOption<Position> =
     let parts = splitFen fen
     if parts.Length <> 6 then ValueNone
@@ -136,27 +113,21 @@ let tryLoadPositionFromFen (board: Board) (fen: string) : ValueOption<Position> 
         match tryParsePlacement placement board with
         | ValueNone -> ValueNone
         | ValueSome kings ->
-
             match parseSideToMove stm with
             | ValueNone -> ValueNone
             | ValueSome toPlay ->
-
-                match BoardHelpers.PieceCode.tryOfFen  castling with
+                match BoardHelpers.PieceCode.tryOfFen castling with
                 | ValueNone -> ValueNone
                 | ValueSome cr ->
-
                     match tryParseEPSquare ep with
                     | ValueNone -> ValueNone
                     | ValueSome epSq ->
-
                         match tryParseByte halfmove with
                         | ValueNone -> ValueNone
                         | ValueSome hmc ->
-
                             match tryParseUInt16 fullmove with
                             | ValueNone -> ValueNone
                             | ValueSome fmn ->
-
                                 let state =
                                     { HashKey = 0L
                                       EPSquare = epSq
@@ -166,16 +137,15 @@ let tryLoadPositionFromFen (board: Board) (fen: string) : ValueOption<Position> 
                                       ToPlay = toPlay }
 
                                 ValueSome { Board = board; State = state; Kings = kings }
-                                
-/// Convert board piece placement to FEN rank format (8..1 with digit compression).
+
 let private placementToFen (board: Board) : string =
     let sb = Text.StringBuilder(90)
 
-    for rank = 8 downto 1 do
+    for rank = 7 downto 0 do
         let mutable empties = 0
 
-        for file = 1 to 8 do
-            let p = board.[file - 1, rank - 1]
+        for file = 0 to 7 do
+            let p = board.[file, rank]
             if p = BoardHelpers.PieceCode.Empty then
                 empties <- empties + 1
             else
@@ -187,12 +157,11 @@ let private placementToFen (board: Board) : string =
         if empties > 0 then
             sb.Append(empties) |> ignore
 
-        if rank > 1 then
+        if rank > 0 then
             sb.Append('/') |> ignore
 
     sb.ToString()
 
-/// Convert castling rights bitmask to FEN castling field.
 let private castlingToFen (rights: byte) : string =
     let sb = Text.StringBuilder(4)
     if hasWK rights then sb.Append('K') |> ignore
@@ -201,16 +170,15 @@ let private castlingToFen (rights: byte) : string =
     if hasBQ rights then sb.Append('q') |> ignore
     if sb.Length = 0 then "-" else sb.ToString()
 
-/// Convert en-passant optional square to FEN field.
+/// Coordinates are 0-based: (0,0) => "a1"
 let private epToFen (ep: ValueOption<Coordinates>) : string =
     match ep with
     | ValueNone -> "-"
     | ValueSome c ->
-        let fileChar = char (int 'a' + int c.File - 1)
-        let rankChar = char (int '0' + int c.Rank)
+        let fileChar = char (int 'a' + int c.File)
+        let rankChar = char (int '1' + int c.Rank)
         String.Concat(string fileChar, string rankChar)
 
-/// Serialize a full Position to FEN.
 let positionToFen (position: Position) : string =
     let placement = placementToFen position.Board
     let stm = if position.State.ToPlay = Color.White then "w" else "b"
@@ -219,4 +187,3 @@ let positionToFen (position: Position) : string =
     let halfmove = string position.State.HalfMoveClock
     let fullmove = string position.State.FullMoveNumber
     String.Join(" ", [| placement; stm; castling; ep; halfmove; fullmove |])
-

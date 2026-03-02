@@ -9,6 +9,7 @@
     <ItemGroup>
         <Compile Include="Types.fs" />
         <Compile Include="BoardHelpers.fs" />
+        <Compile Include="Zobrist.fs" />
         <Compile Include="FENParser.fs" />
         <Compile Include="TranspositionTable.fs" />
         <Compile Include="MakeMove.fs" />
