@@ -313,7 +313,8 @@ module Board =
             ValueSome board.[file , rank ]
         else
             ValueNone
-            
+      
+///////////////////////////////////////////////////////////////////////// 
 module Attacks =
     open Types
     open Board
@@ -435,4 +436,13 @@ module Attacks =
         let kingSq =
             if side = Color.White then pos.Kings.WhiteKingSq
             else pos.Kings.BlackKingSq
-        isSquareAttacked pos kingSq (otherColor side)            
+        isSquareAttacked pos kingSq (otherColor side)
+        
+//////////////////////////////////////////////////////////////////////////
+
+module Configuration =
+    // Debug flag — simple mutable bool
+    let mutable debugEnabled : bool = false
+
+    // Pending hash size in MB (None means no change requested)
+    let mutable pendingHashMb : int option = None

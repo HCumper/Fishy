@@ -7,7 +7,7 @@ open GenerateMoves
 open MakeMove
 open Evaluation
 open BoardHelpers.Attacks
-open UCILogger.Uci
+open Uci
 
 // Eval must be from SIDE-TO-MOVE viewpoint:
 // + => good for pos.State.ToPlay

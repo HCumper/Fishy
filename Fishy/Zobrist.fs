@@ -83,7 +83,6 @@ let toggleBlackToMove (hash:int64) =
 
 // ---------- EP legality policy ----------
 // For strict threefold-repetition semantics, many engines only hash EP when an EP capture is actually legal.
-// If you don't want that complexity yet, keep this always true and hash EP whenever EPSquare is set.
 let epIsRelevant (_board:Board) (_gs:GameState) : bool =
     true
 
