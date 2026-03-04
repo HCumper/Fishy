@@ -103,18 +103,22 @@ let private applyUciMovesFromStartPos (moves:string list) : Position option =
 
         if ok then Some p else None
             
-let private setPosition (fen:string) (moves:string list) =
+let private setPosition (commandLine:string) (moves:string list) =
     stopFlag <- false
 
-    let idx = fen.IndexOf("startpos")
+    let idx = commandLine.IndexOf("startpos")
     if idx >= 0 then
-        let moveString = fen.Substring(idx + 14).Trim()
-        let moveList =
-            moveString.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
-            |> Array.toList
-        current <- applyUciMovesFromStartPos moveList
+        let moveString = commandLine.Substring(idx + 8).Trim()
+        let movesIdx = commandLine.IndexOf("moves")
+        if movesIdx >= 0 then
+            let moveList =
+                moveString.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
+                |> Array.toList |> List.tail
+            current <- applyUciMovesFromStartPos moveList
+        else
+            current <- applyUciMovesFromStartPos []
     else
-        match loadFen fen with
+        match loadFen commandLine with
         | None -> current <- None
         | Some p0 ->
             let pos = applyUciMoves p0 moves

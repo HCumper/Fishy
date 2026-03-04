@@ -121,6 +121,9 @@ let private tryFindIndex (x:string) (ts:string list) =
 let private joinTokens (ts:string list) =
     System.String.Join(" ", ts)
 
+let writeInfo depth (nodeCount: int64) (nps: int64) now eval =
+    Console.WriteLine $"info depth 0 nodes {nodeCount} nps {nps} time {now} score cp {eval}"
+    
 let private parseSetOption (tokens:string list) : string voption * string voption =
     // tokens begins with "setoption"
     // Example: setoption name Hash value 256

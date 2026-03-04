@@ -1,4 +1,4 @@
-﻿module TestProject1.MoveGenerationTests
+﻿module MoveGenerationTests
 
 open Types
 open Fen
