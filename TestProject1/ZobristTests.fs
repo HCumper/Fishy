@@ -10,9 +10,15 @@ open PieceCode
 [<TestFixture>]
 type ``Zobrist tests`` () =
 
-    // Board = sbyte[,]
+    // Board is 1D: length 64, index = file + 8*rank (0-based)
     let mkBoard () : Board =
-        Array2D.create 8 8 0y
+        Array.zeroCreate 64
+
+    let idx (file:int) (rank:int) : int =
+        file + 8 * rank
+
+    let setFR (b:Board) (file:int) (rank:int) (p:sbyte) : unit =
+        b.[idx file rank] <- p
 
     let mkGs (toPlay:Color) (rights:byte) (ep:ValueOption<Coordinates>) : GameState =
         { HashKey = 0L
@@ -26,10 +32,10 @@ type ``Zobrist tests`` () =
     member _.``hashPosition deterministic for same board/state`` () =
         let b = mkBoard()
         // 0-based: e1 = (4,0), e8 = (4,7), d2 = (3,1), d7 = (3,6)
-        Board.set b 4 0 (make Color.White King)
-        Board.set b 4 7 (make Color.Black King)
-        Board.set b 3 1 (make Color.White Pawn)
-        Board.set b 3 6 (make Color.Black Pawn)
+        setFR b 4 0 (make Color.White King)
+        setFR b 4 7 (make Color.Black King)
+        setFR b 3 1 (make Color.White Pawn)
+        setFR b 3 6 (make Color.Black Pawn)
 
         let gs = mkGs Color.White (WK ||| WQ ||| BK ||| BQ) ValueNone
         let h1 = hashPosition b gs
@@ -49,8 +55,8 @@ type ``Zobrist tests`` () =
     [<Test>]
     member _.``side to move differs by toggleBlackToMove`` () =
         let b = mkBoard()
-        Board.set b 4 0 (make Color.White King)
-        Board.set b 4 7 (make Color.Black King)
+        setFR b 4 0 (make Color.White King)
+        setFR b 4 7 (make Color.Black King)
 
         let hW = hashPosition b (mkGs Color.White 0uy ValueNone)
         let hB = hashPosition b (mkGs Color.Black 0uy ValueNone)
@@ -60,11 +66,10 @@ type ``Zobrist tests`` () =
     [<Test>]
     member _.``castling flags change hash by XORing their keys`` () =
         let b = mkBoard()
-        Board.set b 4 0 (make Color.White King)
-        Board.set b 4 7 (make Color.Black King)
+        setFR b 4 0 (make Color.White King)
+        setFR b 4 7 (make Color.Black King)
 
-        let baseGs = mkGs Color.White 0uy ValueNone
-        let h0 = hashPosition b baseGs
+        let h0 = hashPosition b (mkGs Color.White 0uy ValueNone)
 
         let hWK = hashPosition b (mkGs Color.White WK ValueNone)
         Assert.That(hWK, Is.EqualTo(toggleCastleWK h0))
@@ -86,13 +91,12 @@ type ``Zobrist tests`` () =
     [<Test>]
     member _.``en passant file changes hash by toggleEpFile`` () =
         let b = mkBoard()
-        Board.set b 4 0 (make Color.White King)
-        Board.set b 4 7 (make Color.Black King)
+        setFR b 4 0 (make Color.White King)
+        setFR b 4 7 (make Color.Black King)
 
         let h0 = hashPosition b (mkGs Color.White 0uy ValueNone)
 
-        // EP file is hashed by 0-based file 0..7 (a..h).
-        // Rank is ignored by hashing (but still stored in Coordinates).
+        // EP file is hashed by 0-based file 0..7 (a..h). Rank ignored by hashing.
         // Example: d6 => file=3 rank=5 (0-based).
         let ep = ValueSome { File = 3uy; Rank = 5uy }
         let h1 = hashPosition b (mkGs Color.White 0uy ep)
@@ -103,9 +107,9 @@ type ``Zobrist tests`` () =
     member _.``full hash equals manual XOR construction`` () =
         let b = mkBoard()
         // e1 (4,0), e8 (4,7), d2 (3,1)
-        Board.set b 4 0 (make Color.White King)
-        Board.set b 4 7 (make Color.Black King)
-        Board.set b 3 1 (make Color.White Pawn)
+        setFR b 4 0 (make Color.White King)
+        setFR b 4 7 (make Color.Black King)
+        setFR b 3 1 (make Color.White Pawn)
 
         let rights = WK ||| BK
         // Example EP square: e6 => file=4 rank=5 (0-based)
@@ -114,7 +118,7 @@ type ``Zobrist tests`` () =
 
         let hFull = hashPosition b gs
 
-        // Manually build expected based on the same entities hashPosition includes.
+        // Manual expected, matching hashPosition components.
         let mutable h = 0L
 
         // Pieces (togglePiece takes 0-based file/rank)
@@ -137,22 +141,21 @@ type ``Zobrist tests`` () =
     [<Test>]
     member _.``moving a piece changes hash by XORing from/to piece keys`` () =
         let b = mkBoard()
-        Board.set b 4 0 (make Color.White King)
-        Board.set b 4 7 (make Color.Black King)
+        setFR b 4 0 (make Color.White King)
+        setFR b 4 7 (make Color.Black King)
 
         // Knight on b2 => (1,1)
-        Board.set b 1 1 (make Color.White Knight)
+        setFR b 1 1 (make Color.White Knight)
 
         let gs = mkGs Color.White 0uy ValueNone
         let h0 = hashPosition b gs
 
         // Move knight b2 -> c4: (1,1) -> (2,3)
-        Board.set b 1 1 Empty
-        Board.set b 2 3 (make Color.White Knight)
+        setFR b 1 1 Empty
+        setFR b 2 3 (make Color.White Knight)
 
         let h1 = hashPosition b gs
 
-        // Incremental expectation: XOR out from-square, XOR in to-square
         let hExpected =
             h0
             |> togglePiece (make Color.White Knight) 1 1

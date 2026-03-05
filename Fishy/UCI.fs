@@ -2,7 +2,69 @@
 
 open System
 open System.Globalization
+open System.IO
 
+let mutable enableLogging = true
+
+let private logFile = @"i:\temp\uci.log"
+
+let private ensureLogDir () =
+    let dir = Path.GetDirectoryName(logFile)
+    if not (Directory.Exists(dir)) then
+        Directory.CreateDirectory(dir) |> ignore
+
+let private log prefix (line:string) =
+    if enableLogging then
+        try
+            ensureLogDir()
+
+            let entry =
+                sprintf "%s %s %s"
+                    (DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"))
+                    prefix
+                    line
+
+            File.AppendAllText(logFile, entry + Environment.NewLine)
+        with
+        | _ -> ()   // never crash engine because of logging
+
+/// Send a UCI line to GUI
+let send (line:string) =
+    log "-->" line
+    Console.WriteLine(line)
+    Console.Out.Flush()
+
+/// Read a UCI line from GUI
+let read () =
+    let line = Console.ReadLine()
+    if not (isNull line) then
+        log "<--" line
+    line
+
+/// Enable/disable logging at runtime
+let setLogging enabled =
+    enableLogging <- enabled
+
+/// Convenience helpers for common UCI messages
+let sendId name author =
+    send $"id name {name}"
+    send $"id author {author}"
+
+let sendOption line =
+    send $"option {line}"
+
+let sendUciOk () =
+    send "uciok"
+
+let sendReadyOk () =
+    send "readyok"
+
+let sendBestMove move =
+    send $"bestmove {move}"
+
+let sendInfo msg =
+    send $"info {msg}"
+        
 // =============================
 // UCI OPTION TYPES
 // =============================
@@ -68,8 +130,9 @@ let private clamp minv maxv v =
     elif v > maxv then maxv
     else v
 
+
 // =============================
-// GO PARSING
+// GO PARSE
 // =============================
 
 let private parseGoRequest (raw:string) : SearchRequest =
@@ -111,27 +174,27 @@ let private parseGoRequest (raw:string) : SearchRequest =
       Infinite = infinite }
 
 // =============================
-// UCI LOOP
+// Helpers
 // =============================
-
 
 let private tryFindIndex (x:string) (ts:string list) =
     ts |> List.tryFindIndex ((=) x)
 
 let private joinTokens (ts:string list) =
-    System.String.Join(" ", ts)
+    String.Join(" ", ts)
 
+/// Use UciIO instead of Console.WriteLine directly.
 let writeInfo depth (nodeCount: int64) (nps: int64) now eval =
-    Console.WriteLine $"info depth 0 nodes {nodeCount} nps {nps} time {now} score cp {eval}"
-    
+    // keep your existing format (note your original hard-coded depth 0)
+    send $"info depth 0 nodes {nodeCount} nps {nps} time {now} score cp {eval}"
+
 let private parseSetOption (tokens:string list) : string voption * string voption =
     // tokens begins with "setoption"
     // Example: setoption name Hash value 256
     // Example: setoption name Clear Hash
     // Example: setoption name UCI_Elo value 1600
     match tryFindIndex "name" tokens with
-    | None ->
-        ValueNone, ValueNone
+    | None -> ValueNone, ValueNone
     | Some nameIdx ->
         let afterName = tokens |> List.skip (nameIdx + 1)
         match tryFindIndex "value" afterName with
@@ -143,51 +206,57 @@ let private parseSetOption (tokens:string list) : string voption * string voptio
         | Some valueIdx ->
             let nameTokens  = afterName |> List.take valueIdx
             let valueTokens = afterName |> List.skip (valueIdx + 1)
-
             let name = joinTokens nameTokens
             if name = "" then ValueNone, ValueNone
             else
-                let value =
-                    let v = joinTokens valueTokens
-                    if v = "" then ValueNone else ValueSome v
+                let v = joinTokens valueTokens
+                let value = if v = "" then ValueNone else ValueSome v
                 ValueSome name, value
+
+// =============================
+// UCI LOOP
+// =============================
 
 let run (api:EngineApi) =
 
     let mutable running = true
 
     while running do
-        let line = Console.ReadLine()
+        // Read via UciIO so inbound traffic is logged
+        let line = read()
+
         if isNull line then
             running <- false
         else
             let tokens = splitTokens line
 
             match tokens with
-
             | [] -> ()
 
             | "uci" :: _ ->
-                Console.WriteLine $"id name {api.Name}"
-                Console.WriteLine $"id author {api.Author}"
+                // Write via UciIO so outbound traffic is logged and flushed
+                send $"id name {api.Name}"
+                send $"id author {api.Author}"
+
                 for opt in api.Options do
                     match opt with
                     | Spin(n, defv, minv, maxv) ->
-                        Console.WriteLine $"option name {n} type spin default {defv} min {minv} max {maxv}"
+                        send $"option name {n} type spin default {defv} min {minv} max {maxv}"
                     | Check(n, defv) ->
                         let d = if defv then "true" else "false"
-                        Console.WriteLine $"option name {n} type check default {d}"
+                        send $"option name {n} type check default {d}"
                     | Combo(n, defv, vars) ->
                         let varsStr = vars |> List.map (fun v -> $"var {v}") |> String.concat " "
-                        Console.WriteLine $"option name {n} type combo default {defv} {varsStr}"
+                        send $"option name {n} type combo default {defv} {varsStr}"
                     | String(n, defv) ->
-                        Console.WriteLine $"option name {n} type string default {defv}"
+                        send $"option name {n} type string default {defv}"
                     | Button(n) ->
-                        Console.WriteLine $"option name {n} type button"
-                Console.WriteLine "uciok"
+                        send $"option name {n} type button"
+
+                send "uciok"
 
             | "isready" :: _ ->
-                Console.WriteLine "readyok"
+                send "readyok"
 
             | "ucinewgame" :: _ ->
                 api.NewGame()
@@ -195,8 +264,7 @@ let run (api:EngineApi) =
             | "setoption" :: _ ->
                 let nameOpt, valueOpt = parseSetOption tokens
                 match nameOpt with
-                | ValueSome name ->
-                    api.SetOption name valueOpt
+                | ValueSome name -> api.SetOption name valueOpt
                 | ValueNone -> ()
 
             | "position" :: _ ->
@@ -205,11 +273,10 @@ let run (api:EngineApi) =
             | "go" :: _ ->
                 let req = parseGoRequest line
                 let best, ponderOpt = api.Search req
+
                 match ponderOpt with
-                | ValueSome pm ->
-                    Console.WriteLine $"bestmove {best} ponder {pm}"
-                | ValueNone ->
-                    Console.WriteLine $"bestmove {best}"
+                | ValueSome pm -> send $"bestmove {best} ponder {pm}"
+                | ValueNone    -> send $"bestmove {best}"
 
             | "stop" :: _ ->
                 api.Stop()

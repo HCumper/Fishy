@@ -1,5 +1,6 @@
 ﻿module MoveGenerationTests
 
+open System
 open Types
 open Fen
 open BoardHelpers
@@ -7,12 +8,9 @@ open GenerateMoves
 open Attacks
 open NUnit.Framework
 
-// <summary>
-// Move generation tests using FEN positions.
 // Coordinates are 0-indexed throughout these tests:
 //   - Files: a=0, b=1, ..., h=7
 //   - Ranks: 1=0, 2=1, ..., 8=7
-// </summary>
 
 // ============================================================================
 // Test Helpers
@@ -22,15 +20,15 @@ open NUnit.Framework
 let parseSquare (sq: string) : int * int =
     if sq.Length <> 2 then
         failwithf "Invalid square notation: %s" sq
-    let f = int (System.Char.ToLower sq.[0]) - int 'a'   // 0..7
-    let r = int sq.[1] - int '1'                         // 0..7
+    let f = int (Char.ToLower sq.[0]) - int 'a'   // 0..7
+    let r = int sq.[1] - int '1'                  // 0..7
     if f < 0 || f > 7 || r < 0 || r > 7 then
         failwithf "Square out of range: %s" sq
     (f, r)
 
-/// Initialize a fresh 8x8 board from a FEN string.
+/// Initialize a fresh 1D 64-square board from a FEN string.
 let private initBoardFromFen (fen: string) : ValueOption<Position> =
-    let board : Board = Array2D.create 8 8 0y
+    let board : Board = Array.zeroCreate 64
     tryLoadPositionFromFen board fen
 
 /// Helper to run a test with a position loaded from FEN
@@ -375,15 +373,21 @@ let private runMoveGenCase (c: MoveGenCase) =
         let (file, rank) = parseSquare c.FromSquare
         let fromSq = Coordinates.createInts file rank
         let moves = c.Gen pos fromSq inCheck
-        Assert.That(moves.Length, Is.EqualTo(c.ExpectedMoves),
-            $"{c.Name} - Expected {c.ExpectedMoves} moves from {c.FromSquare}, got {moves.Length}")
+        Assert.That(
+            moves.Length,
+            Is.EqualTo(c.ExpectedMoves),
+            $"{c.Name} - Expected {c.ExpectedMoves} moves from {c.FromSquare}, got {moves.Length}"
+        )
     )
 
 let private runAllMovesCase (c: AllMovesCase) =
     withPosition c.Fen c.Name (fun pos ->
         let moves = generateAllLegalMoves pos inCheck
-        Assert.That(moves.Length, Is.EqualTo(c.ExpectedMoves),
-            $"{c.Name} - Expected {c.ExpectedMoves} total moves, got {moves.Length}")
+        Assert.That(
+            moves.Length,
+            Is.EqualTo(c.ExpectedMoves),
+            $"{c.Name} - Expected {c.ExpectedMoves} total moves, got {moves.Length}"
+        )
     )
 
 // ============================================================================
@@ -442,10 +446,10 @@ let ``FEN parser handles all test positions`` () =
         List.concat [
             TestData.KnightTestCases |> List.map (fun c -> c.Fen)
             TestData.BishopTestCases |> List.map (fun c -> c.Fen)
-            TestData.RookTestCases |> List.map (fun c -> c.Fen)
-            TestData.QueenTestCases |> List.map (fun c -> c.Fen)
-            TestData.PawnTestCases |> List.map (fun c -> c.Fen)
-            TestData.KingTestCases |> List.map (fun c -> c.Fen)
+            TestData.RookTestCases   |> List.map (fun c -> c.Fen)
+            TestData.QueenTestCases  |> List.map (fun c -> c.Fen)
+            TestData.PawnTestCases   |> List.map (fun c -> c.Fen)
+            TestData.KingTestCases   |> List.map (fun c -> c.Fen)
             TestData.AllMovesTestCases |> List.map (fun c -> c.Fen)
         ]
         |> List.distinct
@@ -473,7 +477,7 @@ let ``Underpromotion generates all four piece types`` () =
 
 [<Test>]
 let ``Castling rights are respected`` () =
-    let fenNoRights = "2k5/8/8/8/8/8/8/R3K2R w - - 0 1"
+    let fenNoRights   = "2k5/8/8/8/8/8/8/R3K2R w - - 0 1"
     let fenWithRights = "2k5/8/8/8/8/8/8/R3K2R w KQ - 0 1"
 
     withPosition fenNoRights "No castling rights" (fun pos ->
@@ -494,10 +498,10 @@ let ``Castling rights are respected`` () =
 [<Test>]
 let ``Moves from invalid square return empty list`` () =
     withPosition "k7/8/8/8/4K3/8/8/8 w - - 0 1" "Invalid square test" (fun pos ->
-        let fromSq = Coordinates.createInts 4 4  // e5? (doesn't matter; it's empty here)
+        let fromSq = Coordinates.createInts 4 4  // e5 (empty)
         let knightMoves = generateLegalKnightMoves pos fromSq inCheck
         let bishopMoves = generateLegalBishopMoves pos fromSq inCheck
-        let rookMoves   = generateLegalRookMoves pos fromSq inCheck
+        let rookMoves   = generateLegalRookMoves   pos fromSq inCheck
 
         Assert.That(knightMoves.Length, Is.EqualTo(0))
         Assert.That(bishopMoves.Length, Is.EqualTo(0))
@@ -513,8 +517,7 @@ let private runCase (c: PerftCase) =
     match initBoardFromFen c.Fen with
     | ValueSome pos ->
         for depth, nodes in c.Expected do
-            // perft returns uint64 in your GenerateMoves; cast for comparison to int64 expectations
-            let got = int64 (perft pos depth)
+            let got = int64 (perft pos depth) // perft returns uint64
             Assert.That(got, Is.EqualTo(nodes), $"{c.Name}: depth {depth}")
     | ValueNone ->
         Assert.Fail($"FEN parse failed: {c.Name}")

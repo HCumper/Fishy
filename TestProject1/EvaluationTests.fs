@@ -5,15 +5,17 @@ open Types
 open Fen
 open Evaluation
 
-/// Initialize a fresh 8x8 board from a FEN string.
+/// Initialize a fresh 1D 64-square board from a FEN string.
 let private initBoardFromFen (fen: string) : ValueOption<Position> =
-    let board : Board = Array2D.create 8 8 0y
+    let board : Board = Array.zeroCreate 64
     tryLoadPositionFromFen board fen
 
 let private mustLoad (fen: string) : Position =
     match initBoardFromFen fen with
     | ValueSome p -> p
-    | ValueNone -> Assert.Fail($"FEN parse failed: {fen}"); Unchecked.defaultof<Position>
+    | ValueNone ->
+        Assert.Fail($"FEN parse failed: {fen}")
+        Unchecked.defaultof<Position>
 
 [<Test>]
 let ``Evaluate start position is zero`` () =
@@ -54,4 +56,6 @@ let ``PST orientation sanity: advancing a white pawn increases score`` () =
     let p2 = mustLoad fenE2
     let p4 = mustLoad fenE4
     Assert.That(evaluate p4, Is.GreaterThanOrEqualTo(evaluate p2))
-
+    
+    
+    

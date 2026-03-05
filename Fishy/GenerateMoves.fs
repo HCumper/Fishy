@@ -67,7 +67,7 @@ let generateLegalKnightMoves
     : Move list =
 
     let board = pos.Board
-    let piece = getC board fromSq
+    let piece = getSq board fromSq
 
     let side = pos.State.ToPlay
     // Must be a knight of side to move
@@ -86,7 +86,7 @@ let generateLegalKnightMoves
                     { File = byte newFile
                       Rank = byte newRank }
 
-                let target = getC board toSq
+                let target = getSq board toSq
 
                 // empty square OR opponent piece
                 if target = Empty || oppositeColor piece target then
@@ -110,7 +110,7 @@ let private generateLegalSlidingMoves
     : Move list =
 
     let board = pos.Board
-    let piece = getC board fromSq
+    let piece = getSq board fromSq
     let side = pos.State.ToPlay
 
     // Must be correct piece type AND belong to side to move
@@ -128,7 +128,7 @@ let private generateLegalSlidingMoves
             while not blocked && Coordinates.isValidFileRank newFile newRank do
 
                 let toSq = { File = byte newFile; Rank = byte newRank }
-                let target = getC board toSq
+                let target = getSq board toSq
 
                 // empty OR capture opponent
                 if target = Empty || oppositeColor piece target then
@@ -188,7 +188,7 @@ let generateLegalPawnMoves
     : Move list =
 
     let board = pos.Board
-    let piece = getC board fromSq
+    let piece = getSq board fromSq
     let side  = pos.State.ToPlay
 
     // Must be a pawn of side to move
@@ -216,7 +216,7 @@ let generateLegalPawnMoves
         let oneRank = rank0 + forward
         if Coordinates.isValidFileRank file0 oneRank then
             let oneSq = { File = byte file0; Rank = byte oneRank }
-            if getC board oneSq = Empty then
+            if getSq board oneSq = Empty then
                 if oneRank = promoRank then
                     // promotion (quiet)
                     for k in promoKinds do
@@ -239,7 +239,7 @@ let generateLegalPawnMoves
                         let twoRank = rank0 + 2 * forward
                         if Coordinates.isValidFileRank file0 twoRank then
                             let twoSq = { File = byte file0; Rank = byte twoRank }
-                            if getC board twoSq = Empty then
+                            if getSq board twoSq = Empty then
                                 addLegalMove
                                     { From = fromSq
                                       To = twoSq
@@ -253,7 +253,7 @@ let generateLegalPawnMoves
                 let tf = file0 + df
                 if Coordinates.isValidFileRank tf targetRank then
                     let toSq = { File = byte tf; Rank = byte targetRank }
-                    let target = getC board toSq
+                    let target = getSq board toSq
 
                     let isEP =
                         target = Empty &&
@@ -293,7 +293,7 @@ let generateLegalKingMoves
     : Move list =
 
     let board = pos.Board
-    let piece = getC board fromSq
+    let piece = getSq board fromSq
     let side  = pos.State.ToPlay
 
     if not (isKing piece) then
@@ -329,7 +329,7 @@ let generateLegalKingMoves
 
                         // NEW: prohibit king adjacency
                         if not (kingAdjacent toSq oppKingSq) then
-                            let target = getC board toSq
+                            let target = getSq board toSq
                             if target = Empty || oppositeColor piece target then
                                 let move =
                                     { From = fromSq
@@ -356,10 +356,10 @@ let generateLegalKingMoves
                 let hSq = { File = 7uy; Rank = rankB } 
                 
                 let rookPresent = 
-                    let rook = getC board hSq
+                    let rook = getSq board hSq
                     absKind rook = Rook && ((side = Color.White && isWhite rook) || (side = Color.Black && isBlack rook))
                     
-                if rookPresent && getC board fSq = Empty && getC board gSq = Empty then
+                if rookPresent && getSq board fSq = Empty && getSq board gSq = Empty then
                     // NEW: prohibit adjacency on transit/destination squares
                     if not (kingAdjacent fSq oppKingSq) &&
                        not (kingAdjacent gSq oppKingSq) then
@@ -386,11 +386,11 @@ let generateLegalKingMoves
                 let aSq = { File = 0uy; Rank = rankB } 
                 
                 let rookPresent = 
-                    let rook = getC board aSq
+                    let rook = getSq board aSq
                     (side = Color.White && rook = Rook) ||
                     (side = Color.Black && rook = -Rook)
                     
-                if rookPresent && getC board bSq = Empty && getC board dSq = Empty && getC board cSq = Empty then
+                if rookPresent && getSq board bSq = Empty && getSq board dSq = Empty && getSq board cSq = Empty then
                     // NEW: prohibit adjacency on transit/destination squares
                     if not (kingAdjacent dSq oppKingSq) &&
                        not (kingAdjacent cSq oppKingSq) then
@@ -408,7 +408,7 @@ let generateLegalKingMoves
         List.ofSeq moves
         
 let inline private isCaptureMove (pos: Position) (mv: Move) : bool =
-    let target = getC pos.Board mv.To
+    let target = getSq pos.Board mv.To
 
     // Normal capture
     if target <> Empty then true
@@ -435,7 +435,7 @@ let generateAllLegalMoves
     for rank = MinFileRank to MaxFileRank do
         for file = MinFileRank to MaxFileRank do
             let sq = { File = byte file; Rank = byte rank }
-            let p = getC board sq
+            let p = getSq board sq
 
             // skip empty and opponent pieces
             if p <> PieceCode.Empty then

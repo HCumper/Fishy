@@ -59,8 +59,8 @@ let makeMove (pos: byref<Position>) (mv: Move) : MoveUndo =
     let st = pos.State
 
     // Read pieces from board
-    let movingPiece = getC board mv.From
-    let destPiece   = getC board mv.To
+    let movingPiece = getSq board mv.From
+    let destPiece   = getSq board mv.To
 
     // Determine EP capture (pawn diagonal to empty square onto current EPSquare)
     let isPawn = isPawnCode movingPiece
@@ -75,7 +75,7 @@ let makeMove (pos: byref<Position>) (mv: Move) : MoveUndo =
     let capturedPiece, epCapturedSq =
         if isEP then
             let capSq = { File = mv.To.File; Rank = mv.From.Rank } // captured pawn sits on (toFile, fromRank)
-            let capP  = getC board capSq
+            let capP  = getSq board capSq
             capP, ValueSome capSq
         else
             destPiece, ValueNone
@@ -159,14 +159,14 @@ let makeMove (pos: byref<Position>) (mv: Move) : MoveUndo =
             // kingside: rook h->f (7 -> 5)
             let rookFrom = { File = 7uy; Rank = rank }
             let rookTo   = { File = 5uy; Rank = rank }
-            let rookPiece = getC board rookFrom
+            let rookPiece = getSq board rookFrom
             h <- toggleSq rookPiece rookFrom h
             h <- toggleSq rookPiece rookTo h
         else
             // queenside: rook a->d (0 -> 3)
             let rookFrom = { File = 0uy; Rank = rank }
             let rookTo   = { File = 3uy; Rank = rank }
-            let rookPiece = getC board rookFrom
+            let rookPiece = getSq board rookFrom
             h <- toggleSq rookPiece rookFrom h
             h <- toggleSq rookPiece rookTo h
 
@@ -188,11 +188,11 @@ let makeMove (pos: byref<Position>) (mv: Move) : MoveUndo =
     h <- toggleEPRelevant board stAfterForEp ep' h
 
     // --- Apply board changes (mutate board) ---
-    setC board mv.From Empty
+    setSq board mv.From Empty
 
     // EP: remove the captured pawn from its square
     match epCapturedSq with
-    | ValueSome capSq -> setC board capSq Empty
+    | ValueSome capSq -> setSq board capSq Empty
     | ValueNone -> ()
 
     // Castling: move the rook as well (0-based)
@@ -202,19 +202,19 @@ let makeMove (pos: byref<Position>) (mv: Move) : MoveUndo =
             // kingside: rook h->f (7 -> 5)
             let rookFrom = { File = 7uy; Rank = rank }
             let rookTo   = { File = 5uy; Rank = rank }
-            let rookPiece = getC board rookFrom
-            setC board rookFrom Empty
-            setC board rookTo rookPiece
+            let rookPiece = getSq board rookFrom
+            setSq board rookFrom Empty
+            setSq board rookTo rookPiece
         else
             // queenside: rook a->d (0 -> 3)
             let rookFrom = { File = 0uy; Rank = rank }
             let rookTo   = { File = 3uy; Rank = rank }
-            let rookPiece = getC board rookFrom
-            setC board rookFrom Empty
-            setC board rookTo rookPiece
+            let rookPiece = getSq board rookFrom
+            setSq board rookFrom Empty
+            setSq board rookTo rookPiece
 
     // Place piece on destination
-    setC board mv.To placedPiece
+    setSq board mv.To placedPiece
 
     // --- Update king squares if king moved ---
     let kings' =
@@ -252,7 +252,7 @@ let unmakeMove (pos: byref<Position>) (mv: Move) (undo: MoveUndo) : unit =
         if mv.PromoteTo <> 0y then
             make moverColor Pawn
         else
-            getC board mv.To
+            getSq board mv.To
 
     // Detect castling by king move e->g/c on back rank (0-based)
     let isCastle =
@@ -277,29 +277,29 @@ let unmakeMove (pos: byref<Position>) (mv: Move) (undo: MoveUndo) : unit =
             // kingside undo: rook f->h (5 -> 7)
             let rookFrom = { File = 5uy; Rank = rank }
             let rookTo   = { File = 7uy; Rank = rank }
-            let rookPiece = getC board rookFrom
-            setC board rookFrom Empty
-            setC board rookTo rookPiece
+            let rookPiece = getSq board rookFrom
+            setSq board rookFrom Empty
+            setSq board rookTo rookPiece
         else
             // queenside undo: rook d->a (3 -> 0)
             let rookFrom = { File = 3uy; Rank = rank }
             let rookTo   = { File = 0uy; Rank = rank }
-            let rookPiece = getC board rookFrom
-            setC board rookFrom Empty
-            setC board rookTo rookPiece
+            let rookPiece = getSq board rookFrom
+            setSq board rookFrom Empty
+            setSq board rookTo rookPiece
 
     // Restore mover's piece to from-square
-    setC board mv.From movingBackPiece
+    setSq board mv.From movingBackPiece
 
     // Restore captured piece and destination square
     if isEP then
         // EP capture: destination square was empty before; captured pawn sits on (toFile, fromRank)
-        setC board mv.To Empty
+        setSq board mv.To Empty
         let capSq = { File = mv.To.File; Rank = mv.From.Rank }
-        setC board capSq undo.CapturedPiece
+        setSq board capSq undo.CapturedPiece
     else
         // Normal move/capture (including promotion captures)
-        setC board mv.To undo.CapturedPiece
+        setSq board mv.To undo.CapturedPiece
 
     // Restore state and king squares exactly (including HashKey)
     let prevState =

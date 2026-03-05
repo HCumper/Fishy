@@ -49,12 +49,13 @@ let private tryParseEPSquare (s: string) : ValueOption<ValueOption<Coordinates>>
     else
         ValueNone
 
-let private clearBoard (board: Board) =
-    for f = 0 to 7 do
-        for r = 0 to 7 do
-            board.[f, r] <- BoardHelpers.PieceCode.Empty
+let private clearBoard (b:Board) =
+    Array.Fill(b, 0y)
 
-/// Parse placement (ranks 8..1) into 0-based board.[file,rank] with rank 7..0.
+let inline private idxFR (file:int) (rank:int) : int =
+    (rank <<< 3) ||| file
+
+/// Parse placement (ranks 8..1) into 0-based board with rank 7..0.
 /// Returns king squares in 0-based Coordinates.
 let private tryParsePlacement (placement: string) (board: Board) : ValueOption<KingSquares> =
     clearBoard board
@@ -91,7 +92,7 @@ let private tryParsePlacement (placement: string) (board: Board) : ValueOption<K
                 | ValueSome p ->
                     if file >= 8 || rank < 0 then ok <- false
                     else
-                        board.[file, rank] <- p
+                        board.[idxFR file rank] <- p
                         recordKing p file rank
                         file <- file + 1
 
@@ -101,7 +102,7 @@ let private tryParsePlacement (placement: string) (board: Board) : ValueOption<K
         | _ -> ValueNone
     else
         ValueNone
-        
+
 /// Parse a full FEN string into a Position. HashKey remains 0L; compute after load if needed.
 let tryLoadPositionFromFen (board: Board) (fen: string) : ValueOption<Position> =
     let parts = splitFen fen
@@ -145,7 +146,7 @@ let private placementToFen (board: Board) : string =
         let mutable empties = 0
 
         for file = 0 to 7 do
-            let p = board.[file, rank]
+            let p = board.[idxFR file rank]   // FIXED for 1D
             if p = BoardHelpers.PieceCode.Empty then
                 empties <- empties + 1
             else

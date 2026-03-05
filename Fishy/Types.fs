@@ -10,7 +10,7 @@ type Color = White = 0uy | Black = 1uy
 
 type Piece = King | Queen | Rook | Bishop | Knight | Pawn
 
-type Board = sbyte[,]
+type Board = sbyte[]
 
 [<Literal>]
 let BoardSize = 8

@@ -23,8 +23,15 @@ type private SplitMix64(seed0:uint64) =
         z ^^^ (z >>> 31)
     member this.NextInt64() = int64 (this.NextUInt64())
 
+// ---------- Square indexing ----------
+let inline private sq (file:int) (rank:int) : int =
+    (rank <<< 3) ||| file
+
 // ---------- Key tables ----------
-let private pieceKeys : int64[,,] = Array3D.zeroCreate 12 8 8
+// 12 piece types × 64 squares
+let private pieceKeys : int64[][] =
+    Array.init 12 (fun _ -> Array.zeroCreate<int64> 64)
+
 let private castleKeys : int64[] = Array.zeroCreate 4
 let private epFileKeys : int64[] = Array.zeroCreate 8
 
@@ -34,14 +41,13 @@ let private blackToMoveKey : int64 =
     rng.NextInt64()
 
 // Initialize keys deterministically.
-// Change the seed if you want a different key set, but keep it constant for reproducible debugging.
 do
     let rng = SplitMix64(0xC0FFEE1234ABCDEFUL)
 
     for pi = 0 to 11 do
-        for f = 0 to 7 do
-            for r = 0 to 7 do
-                pieceKeys[pi, f, r] <- rng.NextInt64()
+        for rank = 0 to 7 do
+            for file = 0 to 7 do
+                pieceKeys[pi].[sq file rank] <- rng.NextInt64()
 
     for i = 0 to 3 do
         castleKeys[i] <- rng.NextInt64()
@@ -67,7 +73,7 @@ let inline private pieceIndex (p:sbyte) : int option =
 let togglePiece (p:sbyte) (file:int) (rank:int) (hash:int64) : int64 =
     match pieceIndex p with
     | None -> hash
-    | Some idx -> hash ^^^ pieceKeys[idx, file, rank]
+    | Some idx -> hash ^^^ pieceKeys[idx].[sq file rank]
 
 let toggleCastleWK (hash:int64) = hash ^^^ castleKeys[0]
 let toggleCastleWQ (hash:int64) = hash ^^^ castleKeys[1]
@@ -82,7 +88,6 @@ let toggleBlackToMove (hash:int64) =
     hash ^^^ blackToMoveKey
 
 // ---------- EP legality policy ----------
-// For strict threefold-repetition semantics, many engines only hash EP when an EP capture is actually legal.
 let epIsRelevant (_board:Board) (_gs:GameState) : bool =
     true
 
@@ -92,7 +97,7 @@ let hashPosition (board:Board) (gs:GameState) : int64 =
 
     for rank = 0 to 7 do
         for file = 0 to 7 do
-            let p = board.[file, rank]
+            let p = board.[sq file rank]   // FIXED for 1D board
             if p <> Empty then
                 h <- togglePiece p file rank h
 

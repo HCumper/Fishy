@@ -20,6 +20,12 @@ open Search
 let private startFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+let tt =
+    TranspositionTable.create
+        { Mb = 128
+          BucketSize = 4
+          MaxAge = 8 }
+
 let mutable private current : Position option = None
 let mutable private stopFlag = false
 
@@ -31,7 +37,7 @@ let waitForDebuggerIfRequested () =
     | _ -> ()
 
 let private loadFen (fen:string) : Position option =
-    let board : Board = Array2D.create 8 8 0y
+    let board : Board = Array.zeroCreate 64
     match tryLoadPositionFromFen board fen with
     | ValueSome p -> Some p
     | ValueNone -> None
@@ -103,27 +109,60 @@ let private applyUciMovesFromStartPos (moves:string list) : Position option =
 
         if ok then Some p else None
             
-let private setPosition (commandLine:string) (moves:string list) =
+let private setPosition (commandLine: string) (_moves: string list) =
     stopFlag <- false
 
-    let idx = commandLine.IndexOf("startpos")
-    if idx >= 0 then
-        let moveString = commandLine.Substring(idx + 8).Trim()
-        let movesIdx = commandLine.IndexOf("moves")
-        if movesIdx >= 0 then
-            let moveList =
-                moveString.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
-                |> Array.toList |> List.tail
-            current <- applyUciMovesFromStartPos moveList
-        else
+    // Tokenize once, normalize for keywords
+    let toks =
+        commandLine.Trim().Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.toList
+
+    let toksLower = toks |> List.map (fun s -> s.ToLowerInvariant())
+
+    let tryFindIndex (s:string) (xs:string list) =
+        xs |> List.tryFindIndex ((=) s)
+
+    let after i xs = xs |> List.skip (i + 1)
+
+    match toksLower with
+    | [] ->
+        current <- None
+
+    // UCI "position startpos [moves ...]"
+    | "position" :: "startpos" :: rest ->
+        match tryFindIndex "moves" rest |> Option.map (fun i -> i) with
+        | None ->
             current <- applyUciMovesFromStartPos []
-    else
+        | Some mi ->
+            let moveList = rest |> after mi
+            current <- applyUciMovesFromStartPos moveList
+
+    // UCI "position fen <6 fields> [moves ...]"
+    | "position" :: "fen" :: rest ->
+        // rest begins with 6 FEN fields (placement stm castling ep half full)
+        if List.length rest < 6 then
+            current <- None
+        else
+            let fenFields = rest |> List.take 6
+            let fen = String.Join(" ", fenFields)
+
+            let movesAfterFen = rest |> List.skip 6
+            let moveList =
+                match tryFindIndex "moves" movesAfterFen with
+                | None -> []
+                | Some mi -> movesAfterFen |> after mi
+
+            match loadFen fen with
+            | None -> current <- None
+            | Some p0 ->
+                current <- applyUciMoves p0 moveList
+
+    // If caller passed something else, attempt to treat whole line as a FEN
+    | _ ->
         match loadFen commandLine with
         | None -> current <- None
         | Some p0 ->
-            let pos = applyUciMoves p0 moves
-            current <- pos
-
+            current <- Some p0
 let private search (req:SearchRequest) : string * string voption =
     stopFlag <- false
 
@@ -132,7 +171,7 @@ let private search (req:SearchRequest) : string * string voption =
         "0000", ValueNone
     | Some pos ->
         // NOTE: for stop to work, chooseBestMove must consult stopFlag (or a CancellationToken).
-        match chooseBestMove pos req with
+        match chooseBestMove tt pos req with
         | ValueSome mv -> moveToUci mv, ValueNone
         | ValueNone -> "0000", ValueNone
 
@@ -176,3 +215,4 @@ let createApi () : EngineApi =
       Search = search
       Stop = stop
       SetOption = setOption }
+    

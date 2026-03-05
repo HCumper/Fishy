@@ -14,6 +14,7 @@ let main _ =
     //waitForDebuggerIfRequested()
     // while not Debugger.IsAttached do
     //         Thread.Sleep(100)
+//    UCIIntegration.tt
     let api = createApi()
     run api
     0

@@ -3,16 +3,13 @@
 open NUnit.Framework
 
 open Types
-open BoardHelpers
-open Board
-open PieceCode
-open CastlingRights
+open BoardHelpers.PieceCode
+open BoardHelpers.CastlingRights
 open Zobrist
 open MakeMove
 
-// Board is 8x8 (NOT padded).
+// Board is 1D: length 64, index = file + 8*rank (0-based).
 // Coordinates are 0-based: File/Rank = 0..7
-// Access board via getC/setC consistently.
 
 [<TestFixture>]
 type ``MakeMove tests`` () =
@@ -20,20 +17,30 @@ type ``MakeMove tests`` () =
     // -------- helpers --------
 
     let mkBoard () : Board =
-        Array2D.create 8 8 0y
+        Array.zeroCreate 64
 
     let sq (f:int) (r:int) : Coordinates =
         { File = byte f; Rank = byte r }
+
+    let idx (c:Coordinates) : int =
+        int c.File + 8 * int c.Rank
+
+    let getSq1 (b:Board) (c:Coordinates) : sbyte =
+        b.[idx c]
+
+    let setSq1 (b:Board) (c:Coordinates) (p:sbyte) : unit =
+        b.[idx c] <- p
 
     let cloneBoard (b:Board) : Board =
         b.Clone() :?> Board
 
     let boardsEqual (a:Board) (b:Board) =
-        Assert.That(a.GetLength(0), Is.EqualTo(b.GetLength(0)))
-        Assert.That(a.GetLength(1), Is.EqualTo(b.GetLength(1)))
-        for file = 0 to a.GetLength(0) - 1 do
-            for rank = 0 to a.GetLength(1) - 1 do
-                Assert.That(a.[file, rank], Is.EqualTo(b.[file, rank]), $"Mismatch at [{file},{rank}]")
+        Assert.That(a.Length, Is.EqualTo(b.Length))
+        for i = 0 to a.Length - 1 do
+            if a.[i] <> b.[i] then
+                let file = i % 8
+                let rank = i / 8
+                Assert.That(a.[i], Is.EqualTo(b.[i]), $"Mismatch at [{file},{rank}] (idx {i})")
 
     let mkGs (toPlay:Color) (rights:byte) (ep:ValueOption<Coordinates>) : GameState =
         { HashKey = 0L
@@ -49,19 +56,19 @@ type ``MakeMove tests`` () =
 
     // Edit if your Position record differs.
     let mkPos (b:Board) (gs:GameState) (wk:Coordinates) (bk:Coordinates) : Position =
-        // hashPosition reads board[0..7,0..7] and gs fields (including EP file, rights, stm)
+        // hashPosition reads board and gs fields (EP file, rights, stm, etc.)
         let h = hashPosition b gs
         { Board = b
           State = { gs with HashKey = h }
           Kings = mkKings wk bk }
 
     let assertHashConsistent (pos:Position) =
-        // IMPORTANT: recompute using state EXCEPT HashKey, so make sure your hashPosition ignores gs.HashKey
+        // recompute from board + full state
         let h = hashPosition pos.Board pos.State
         Assert.That(pos.State.HashKey, Is.EqualTo(h), "Incremental HashKey != full recomputed hashPosition")
 
     let mkMove (board:Board) (fromSq:Coordinates) (toSq:Coordinates) (promoteTo:sbyte) : Move =
-        let piece = getC board fromSq
+        let piece = getSq1 board fromSq
         Assert.That(piece, Is.Not.EqualTo(Empty), "From-square is empty in test setup")
         { From = fromSq
           To = toSq
@@ -73,9 +80,9 @@ type ``MakeMove tests`` () =
     [<Test>]
     member _.``makeMove then unmakeMove restores board and state and hash`` () =
         let b = mkBoard()
-        setC b (sq 4 0) (make Color.White King)    // e1
-        setC b (sq 4 7) (make Color.Black King)    // e8
-        setC b (sq 1 1) (make Color.White Knight)  // b2
+        setSq1 b (sq 4 0) (make Color.White King)    // e1
+        setSq1 b (sq 4 7) (make Color.Black King)    // e8
+        setSq1 b (sq 1 1) (make Color.White Knight)  // b2
 
         let gs = mkGs Color.White 0uy ValueNone
         let pos0 = mkPos b gs (sq 4 0) (sq 4 7)
@@ -101,10 +108,10 @@ type ``MakeMove tests`` () =
     [<Test>]
     member _.``normal capture updates hash and unmake restores`` () =
         let b = mkBoard()
-        setC b (sq 4 0) (make Color.White King)
-        setC b (sq 4 7) (make Color.Black King)
-        setC b (sq 3 3) (make Color.White Knight)   // d4
-        setC b (sq 4 5) (make Color.Black Pawn)     // e6
+        setSq1 b (sq 4 0) (make Color.White King)
+        setSq1 b (sq 4 7) (make Color.Black King)
+        setSq1 b (sq 3 3) (make Color.White Knight)   // d4
+        setSq1 b (sq 4 5) (make Color.Black Pawn)     // e6
 
         let gs = mkGs Color.White 0uy ValueNone
         let pos0 = mkPos b gs (sq 4 0) (sq 4 7)
@@ -128,9 +135,9 @@ type ``MakeMove tests`` () =
     [<Test>]
     member _.``castling moves rook, updates castling rights, hash consistent, unmake restores`` () =
         let b = mkBoard()
-        setC b (sq 4 0) (make Color.White King)  // e1
-        setC b (sq 7 0) (make Color.White Rook)  // h1
-        setC b (sq 4 7) (make Color.Black King)  // e8
+        setSq1 b (sq 4 0) (make Color.White King)  // e1
+        setSq1 b (sq 7 0) (make Color.White Rook)  // h1
+        setSq1 b (sq 4 7) (make Color.Black King)  // e8
 
         let rights = WK ||| WQ
         let gs = mkGs Color.White rights ValueNone
@@ -145,10 +152,10 @@ type ``MakeMove tests`` () =
         let undo = makeMove &pos mv
 
         // After O-O: king g1 (6,0), rook f1 (5,0)
-        Assert.That(getC pos.Board (sq 6 0), Is.EqualTo(make Color.White King))
-        Assert.That(getC pos.Board (sq 5 0), Is.EqualTo(make Color.White Rook))
-        Assert.That(getC pos.Board (sq 4 0), Is.EqualTo(Empty))
-        Assert.That(getC pos.Board (sq 7 0), Is.EqualTo(Empty))
+        Assert.That(getSq1 pos.Board (sq 6 0), Is.EqualTo(make Color.White King))
+        Assert.That(getSq1 pos.Board (sq 5 0), Is.EqualTo(make Color.White Rook))
+        Assert.That(getSq1 pos.Board (sq 4 0), Is.EqualTo(Empty))
+        Assert.That(getSq1 pos.Board (sq 7 0), Is.EqualTo(Empty))
 
         Assert.That(pos.State.CastlingRights &&& (WK ||| WQ), Is.EqualTo(0uy))
         assertHashConsistent pos
@@ -162,11 +169,11 @@ type ``MakeMove tests`` () =
     [<Test>]
     member _.``en passant capture removes pawn from cap square, hash consistent, unmake restores`` () =
         let b = mkBoard()
-        setC b (sq 4 0) (make Color.White King)
-        setC b (sq 4 7) (make Color.Black King)
+        setSq1 b (sq 4 0) (make Color.White King)
+        setSq1 b (sq 4 7) (make Color.Black King)
 
-        setC b (sq 4 4) (make Color.White Pawn)  // e5
-        setC b (sq 3 4) (make Color.Black Pawn)  // d5
+        setSq1 b (sq 4 4) (make Color.White Pawn)  // e5
+        setSq1 b (sq 3 4) (make Color.Black Pawn)  // d5
 
         // EP target square d6 => (3,5)
         let ep = ValueSome (sq 3 5)
@@ -182,9 +189,9 @@ type ``MakeMove tests`` () =
         let mutable pos = pos0
         let undo = makeMove &pos mv
 
-        Assert.That(getC pos.Board (sq 3 5), Is.EqualTo(make Color.White Pawn))
-        Assert.That(getC pos.Board (sq 3 4), Is.EqualTo(Empty)) // captured pawn removed
-        Assert.That(getC pos.Board (sq 4 4), Is.EqualTo(Empty))
+        Assert.That(getSq1 pos.Board (sq 3 5), Is.EqualTo(make Color.White Pawn))
+        Assert.That(getSq1 pos.Board (sq 3 4), Is.EqualTo(Empty)) // captured pawn removed
+        Assert.That(getSq1 pos.Board (sq 4 4), Is.EqualTo(Empty))
         Assert.That(undo.CapturedPiece, Is.EqualTo(make Color.Black Pawn))
 
         assertHashConsistent pos
@@ -198,10 +205,10 @@ type ``MakeMove tests`` () =
     [<Test>]
     member _.``promotion changes piece on destination, hash consistent, unmake restores pawn`` () =
         let b = mkBoard()
-        setC b (sq 4 0) (make Color.White King)
-        setC b (sq 4 7) (make Color.Black King)
+        setSq1 b (sq 4 0) (make Color.White King)
+        setSq1 b (sq 4 7) (make Color.Black King)
 
-        setC b (sq 0 6) (make Color.White Pawn)  // a7
+        setSq1 b (sq 0 6) (make Color.White Pawn)  // a7
 
         let gs = mkGs Color.White 0uy ValueNone
         let pos0 = mkPos b gs (sq 4 0) (sq 4 7)
@@ -214,8 +221,8 @@ type ``MakeMove tests`` () =
         let mutable pos = pos0
         let undo = makeMove &pos mv
 
-        Assert.That(getC pos.Board (sq 0 6), Is.EqualTo(Empty))
-        Assert.That(getC pos.Board (sq 0 7), Is.EqualTo(make Color.White Queen))
+        Assert.That(getSq1 pos.Board (sq 0 6), Is.EqualTo(Empty))
+        Assert.That(getSq1 pos.Board (sq 0 7), Is.EqualTo(make Color.White Queen))
         assertHashConsistent pos
 
         unmakeMove &pos mv undo
@@ -227,10 +234,10 @@ type ``MakeMove tests`` () =
     [<Test>]
     member _.``double pawn push sets EP square and hash consistent`` () =
         let b = mkBoard()
-        setC b (sq 4 0) (make Color.White King)
-        setC b (sq 4 7) (make Color.Black King)
+        setSq1 b (sq 4 0) (make Color.White King)
+        setSq1 b (sq 4 7) (make Color.Black King)
 
-        setC b (sq 4 1) (make Color.White Pawn) // e2
+        setSq1 b (sq 4 1) (make Color.White Pawn) // e2
 
         let gs = mkGs Color.White 0uy ValueNone
         let pos0 = mkPos b gs (sq 4 0) (sq 4 7)

@@ -56,7 +56,8 @@ module PieceCode =
     let inline make color kind =
         match color with
         | Color.White -> kind
-        | _ -> -kind
+        | Color.Black -> -kind
+        | _ -> kind
 
 
     /// Create signed piece code from Color and PieceKind.
@@ -247,7 +248,7 @@ module CastlingRights =
     
 ////////////////////////////////////////////////////////////////
     
-// Coordinates: 1-based (File/Rank = 0..7). Provides validated and unchecked creation.
+// Coordinates: 0-based (File/Rank = 0..7). Provides validated and unchecked creation.
 module Coordinates =
     open Types
 
@@ -286,33 +287,44 @@ module Coordinates =
         { File = file; Rank = rank }
         
 //////////////////////////////////////////////////////////////////        
-    // Board: sbyte[,] storage using 0-based array internally.
+    // Board: sbyte[] storage using 0-based array internally.
     // Coordinates are 1-based; conversion subtracts 1 for indexing.
     
 module Board =
     open Types
 
     let inline isOnBoard file rank =
-        file >= MinFileRank && file <= MaxFileRank &&
-        rank >= MinFileRank && rank <= MaxFileRank
+        file >= 0 && file < 8 &&
+        rank >= 0 && rank < 8
 
-    let inline get (board: Board) file rank =
-        board.[file , rank ]
+    // let inline get (board: Board) file rank =
+    //     board.[file , rank ]
+    //
+    // let inline set (board: Board) file rank piece =
+    //     board.[file , rank ] <- piece
+    //
+    // let inline getC (board: Board) (c: Coordinates) : sbyte =
+    //     board.[int c.File , int c.Rank ]
+    //
+    // let inline setC (board: Board) (c: Coordinates) (piece: sbyte) : unit =
+    //     board.[int c.File , int c.Rank ] <- piece
 
-    let inline set (board: Board) file rank piece =
-        board.[file , rank ] <- piece
+    let inline idxFR (f:int) (r:int) : int = (r <<< 3) ||| f
 
-    let inline getC (board: Board) (c: Coordinates) : sbyte =
-        board.[int c.File , int c.Rank ]
+    let inline getFR (b:Board) (f:int) (r:int) : sbyte =
+        b.[idxFR f r]
 
-    let inline setC (board: Board) (c: Coordinates) (piece: sbyte) : unit =
-        board.[int c.File , int c.Rank ] <- piece
+    let inline setFR (b:Board) (f:int) (r:int) (p:sbyte) : unit =
+        b.[idxFR f r] <- p
+        
+    let inline idxSq (sq:Coordinates) : int =
+        (int sq.Rank <<< 3) ||| int sq.File
 
-    let inline tryGet (board: Board) (file: int) (rank: int) : sbyte voption =
-        if isOnBoard file rank then
-            ValueSome board.[file , rank ]
-        else
-            ValueNone
+    let inline getSq (b:Board) (sq:Coordinates) : sbyte =
+        b.[idxSq sq]
+
+    let inline setSq (b:Board) (sq:Coordinates) (p:sbyte) : unit =
+        b.[idxSq sq] <- p  
       
 ///////////////////////////////////////////////////////////////////////// 
 module Attacks =
@@ -366,17 +378,17 @@ module Attacks =
         let pawnSourceRank = if attacker = Color.White then r - 1 else r + 1
         match tryCoord (f - 1) pawnSourceRank with
         | ValueSome c ->
-            let p = getC board c
+            let p = getSq board c
             if isAttacker attacker p && absKind p = Pawn then true else
             match tryCoord (f + 1) pawnSourceRank with
             | ValueSome c2 ->
-                let p2 = getC board c2
+                let p2 = getSq board c2
                 isAttacker attacker p2 && absKind p2 = Pawn
             | ValueNone -> false
         | ValueNone ->
             match tryCoord (f + 1) pawnSourceRank with
             | ValueSome c2 ->
-                let p2 = getC board c2
+                let p2 = getSq board c2
                 isAttacker attacker p2 && absKind p2 = Pawn
             | ValueNone -> false
         |> fun pawnHit ->
@@ -388,7 +400,7 @@ module Attacks =
                 if not hit then
                     match tryCoord (f + df) (r + dr) with
                     | ValueSome c ->
-                        let p = getC board c
+                        let p = getSq board c
                         if isAttacker attacker p && absKind p = Knight then hit <- true
                     | ValueNone -> ()
             if hit then true else
@@ -398,7 +410,7 @@ module Attacks =
                 if not hit then
                     match tryCoord (f + df) (r + dr) with
                     | ValueSome c ->
-                        let p = getC board c
+                        let p = getSq board c
                         if isAttacker attacker p && absKind p = King then hit <- true
                     | ValueNone -> ()
             if hit then true else
@@ -409,14 +421,14 @@ module Attacks =
                 let mutable nr = r + dr
                 let mutable blocked = false
                 while not hit && not blocked && onBoard nf nr do
-                    let p = getC board { File = byte nf; Rank = byte nr }
+                    let p = getFR board nf nr
                     if p = Empty then
                         nf <- nf + df
                         nr <- nr + dr
                     else
                         if matches p then hit <- true
                         blocked <- true
-
+            
             // bishops/queens (diagonals)
             for (df, dr) in bishopDirs do
                 if not hit then
@@ -439,6 +451,93 @@ module Attacks =
         isSquareAttacked pos kingSq (otherColor side)
         
 //////////////////////////////////////////////////////////////////////////
+
+module MovePacking =
+
+    open Types
+    open PieceCode
+
+    // -----------------------------
+    // Square packing
+    // -----------------------------
+
+    [<Literal>]
+    let FromShift = 0
+    [<Literal>]
+    let ToShift   = 6
+    [<Literal>]
+    let PromoShift = 12
+
+    [<Literal>]
+    let SqMask   = 0x3F      // 6 bits
+    [<Literal>]
+    let PromoMask = 0x7      // 3 bits
+
+    let inline sqToIndex (sq:Coordinates) : int =
+        (int sq.File) + 8 * (int sq.Rank)
+
+    let inline indexToSq (i:int) : Coordinates =
+        { File = byte (i &&& 7)
+          Rank = byte (i >>> 3) }
+
+    /// promo code (sbyte piece code) -> promo field (0..4)
+    /// 0 = none, 1=N, 2=B, 3=R, 4=Q
+    let inline promoFieldOf (promoteTo:sbyte) : int =
+        if promoteTo = 0y then 0
+        else
+            match absKind promoteTo with
+            | Knight -> 1
+            | Bishop -> 2
+            | Rook   -> 3
+            | Queen  -> 4
+            | _      -> 0   // ignore invalid
+
+    /// promo field (0..4) -> promoteTo code (needs mover color)
+    let inline promoteToOfField (side:Color) (pf:int) : sbyte =
+        match pf with
+        | 1 -> make side Knight
+        | 2 -> make side Bishop
+        | 3 -> make side Rook
+        | 4 -> make side Queen
+        | _ -> 0y
+
+    // -----------------------------
+    // Move packing
+    // -----------------------------
+
+    /// Pack a Move into int32 (Piece not stored; PromoteTo stored as 0..4)
+    let inline encode (mv:Move) : int32 =
+        let f = sqToIndex mv.From
+        let t = sqToIndex mv.To
+        let p = promoFieldOf mv.PromoteTo
+        int32 (
+            (f &&& SqMask) <<< FromShift
+            ||| (t &&& SqMask) <<< ToShift
+            ||| (p &&& PromoMask) <<< PromoShift
+        )
+
+    /// Decode into components. You typically still need the board to fill mv.Piece,
+    /// and you need side-to-move to build PromoteTo code.
+    let inline decode
+        (side:Color)
+        (code:int32)
+        : struct(Coordinates * Coordinates * sbyte) =
+        let x = int code
+        let f = (x >>> FromShift) &&& SqMask
+        let t = (x >>> ToShift)   &&& SqMask
+        let p = (x >>> PromoShift) &&& PromoMask
+        let fromSq = indexToSq f
+        let toSq   = indexToSq t
+        let promoteTo = promoteToOfField side p
+        struct(fromSq, toSq, promoteTo)
+
+    let inline unpackMove (pos:Position) (code:int32) : Move =
+        let side = pos.State.ToPlay
+        let struct(fromSq, toSq, promoteTo) = decode side code
+        let piece = Board.getSq pos.Board fromSq
+        { From = fromSq; To = toSq; Piece = piece; PromoteTo = promoteTo }
+
+/////////////////////////////////////////////////////////////////////////
 
 module Configuration =
     // Debug flag — simple mutable bool

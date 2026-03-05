@@ -8,6 +8,7 @@ open MakeMove
 open Evaluation
 open BoardHelpers.Attacks
 open Uci
+open TranspositionTable
 
 // Eval must be from SIDE-TO-MOVE viewpoint:
 // + => good for pos.State.ToPlay
@@ -28,19 +29,70 @@ let inline private otherColor (c: Color) =
 /// Mate score convention (in centipawns). Larger than any plausible eval.
 [<Literal>]
 let MateScore = 30000
+
 [<Literal>]
 let InCheckPenalty = 100
+
 let negInf = -MateScore - 1
 
+// --------------------
+// TT helpers
+// --------------------
+
+let inline private keyOfPos (pos: Position) : uint64 =
+    // Assuming pos.State.HashKey is int64 Zobrist (as in your tests)
+    uint64 pos.State.HashKey
+
+let inline private clamp16 (x:int) : int16 =
+    if x < int Int16.MinValue then Int16.MinValue
+    elif x > int Int16.MaxValue then Int16.MaxValue
+    else int16 x
+
+/// Pack Move into int32 for TT storage.
+/// Layout (bits): from(0..63)=6, to(0..63)=6, promo=4  -> 16 bits used.
+let inline private packMove (mv: Move) : int32 =
+    let fromSq = int mv.From.File + 8 * int mv.From.Rank
+    let toSq   = int mv.To.File   + 8 * int mv.To.Rank
+    // PromoteTo is an sbyte piececode in your engine; keep low 4 bits
+    let promo  = (int mv.PromoteTo) &&& 0xF
+    int32 (fromSq ||| (toSq <<< 6) ||| (promo <<< 12))
+
+let inline private isPackedMoveMatch (packed:int32) (mv:Move) =
+    packed <> 0 && packed = packMove mv
+
+/// Use TT entry as a cutoff if entry depth is sufficient and bound proves alpha/beta.
+let inline private tryUseTT (pr:ProbeResult) (depth:int) (alpha:int) (beta:int) : int voption =
+    if pr.Hit && int pr.Entry.Depth >= depth then
+        let s = int pr.Entry.Score
+        match pr.Entry.Bound with
+        | BoundExact -> ValueSome s
+        | BoundLower when s >= beta -> ValueSome s
+        | BoundUpper when s <= alpha -> ValueSome s
+        | _ -> ValueNone
+    else
+        ValueNone
+
+// =============================
+// Info output
+// =============================
+
+let writeInfo depth (nodeCount: int64) (nps: int64) now eval =
+    Uci.send $"info depth 0 nodes {nodeCount} nps {nps} time {now} score cp {eval}"
+
+// =============================
+// Search (Negamax + TT)
+// =============================
+
 /// Fishy's heart
-/// Negamax with alpha-beta.
+/// Negamax with alpha-beta + transposition table.
 /// Returns score from the SIDE-TO-MOVE viewpoint at the root `pos`.
 let rec negamax
+    (tt: TranspositionTable)
     (pos: Position)
     (depth: int)
     (alpha: int)
     (beta: int)
-    (stopwatch: System.Diagnostics.Stopwatch)
+    (stopwatch: Diagnostics.Stopwatch)
     : int =
 
     nodeCount <- nodeCount + 1L
@@ -48,58 +100,102 @@ let rec negamax
         let now = stopwatch.ElapsedMilliseconds
         if now - lastInfoTime >= infoIntervalMs then
             lastInfoTime <- now
-
-            let nps =
-                if now > 0L then nodeCount * 1000L / now else 0L
-
+            let nps = if now > 0L then nodeCount * 1000L / now else 0L
             writeInfo depth nodeCount nps now currentRootScore
-            
-    if depth <= 0 then
-        evaluate pos
-    else
-        let side = pos.State.ToPlay
-        let moves = generateAllLegalMoves pos inCheck
 
-        if List.isEmpty moves then
-            if inCheck pos side then
-                -MateScore + (InCheckPenalty - depth)
-            else
-                0
+    let alphaOrig = alpha
+    let key = keyOfPos pos
+
+    // ---- TT PROBE ----
+    let pr = probe tt key
+
+    match tryUseTT pr depth alpha beta with
+    | ValueSome score ->
+        score
+
+    | ValueNone ->
+
+        // Leaf
+        if depth <= 0 then
+            // Store leaf as exact (cheap, helps repetition / move ordering)
+            let sc = evaluate pos
+            store tt key 0 (clamp16 sc) (clamp16 sc) 0 BoundExact 0uy
+            sc
         else
-            let mutable a = alpha
-            let mutable best = negInf
-            let mutable cutoff = false
+            let side = pos.State.ToPlay
+            let moves0 = generateAllLegalMoves pos inCheck
 
-            for mv in moves do
-                if not cutoff then
-                    let mutable p = pos
-                    let undo = makeMove &p mv
+            if List.isEmpty moves0 then
+                let sc =
+                    if inCheck pos side then
+                        -MateScore + (InCheckPenalty - depth)
+                    else
+                        0
+                store tt key 0 (clamp16 sc) (clamp16 sc) depth BoundExact 0uy
+                sc
+            else
+                // ---- TT MOVE ORDERING ----
+                let ttMovePacked =
+                    if pr.Hit then pr.Entry.Move else 0
 
-                    let score = - (negamax p (depth - 1) (-beta) (-a) stopwatch)
+                let moves =
+                    if ttMovePacked = 0 then moves0
+                    else
+                        // TT move first, rest after
+                        let ttFirst, rest =
+                            moves0 |> List.partition (isPackedMoveMatch ttMovePacked)
+                        ttFirst @ rest
 
-                    unmakeMove &p mv undo
+                let mutable a = alpha
+                let mutable best = negInf
+                let mutable bestMovePacked = 0
+                let mutable cutoff = false
 
-                    if score > best then best <- score
-                    if score > a then a <- score
-                    if a >= beta then cutoff <- true
+                for mv in moves do
+                    if not cutoff then
+                        let mutable p = pos
+                        let undo = makeMove &p mv
 
-            best
+                        let score = - (negamax tt p (depth - 1) (-beta) (-a) stopwatch)
+
+                        unmakeMove &p mv undo
+
+                        if score > best then
+                            best <- score
+                            bestMovePacked <- packMove mv
+
+                        if score > a then a <- score
+                        if a >= beta then cutoff <- true
+
+                // ---- TT STORE ----
+                // Bound based on alphaOrig/beta and final best
+                let bound =
+                    if best <= alphaOrig then BoundUpper
+                    elif best >= beta then BoundLower
+                    else BoundExact
+
+                store tt key bestMovePacked (clamp16 best) (clamp16 best) depth bound 0uy
+                best
 
 let private depthFromRequest (req: SearchRequest) =
     match req.Depth with
     | ValueSome d when d > 0 -> d
-    | _ -> 8
+    | _ -> 5
 
-/// Picks best move using negamax and UCI depth (default 4 if not provided).
-let chooseBestMove (pos: Position) (req: SearchRequest) : Move voption =
+/// Picks best move using negamax and UCI depth (default 5 if not provided).
+let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest) : Move voption =
     let depth = depthFromRequest req
     let moves = generateAllLegalMoves pos inCheck
-    let stopwatch = System.Diagnostics.Stopwatch.StartNew()
+    let stopwatch = Diagnostics.Stopwatch.StartNew()
+
     searchStartTime <- 0L
     lastInfoTime <- 0L
     nodeCount <- 0L
     currentRootScore <- 0
-    
+
+    // Advance TT generation once per root search
+    newSearch tt
+
     match moves with
     | [] -> ValueNone
     | _ ->
@@ -112,7 +208,7 @@ let chooseBestMove (pos: Position) (req: SearchRequest) : Move voption =
             let mutable p = pos
             let undo = makeMove &p mv
 
-            let score = - (negamax p (depth - 1) (-beta) (-alpha) stopwatch)
+            let score = - (negamax tt p (depth - 1) (-beta) (-alpha) stopwatch)
 
             unmakeMove &p mv undo
 
