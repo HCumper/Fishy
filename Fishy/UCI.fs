@@ -187,6 +187,8 @@ let private joinTokens (ts:string list) =
 let writeInfo depth (nodeCount: int64) (nps: int64) now eval =
     // keep your existing format (note your original hard-coded depth 0)
     send $"info depth 0 nodes {nodeCount} nps {nps} time {now} score cp {eval}"
+    let s = TranspositionTable.getStats()
+    send $"info string TT probes={s.Probes} hits={s.Hits} useful={s.Useful} stores={s.Stores} overwrites={s.Overwrites} ageRejects={s.AgeRejects} depthRejects={s.DepthRejects}"
 
 let private parseSetOption (tokens:string list) : string voption * string voption =
     // tokens begins with "setoption"

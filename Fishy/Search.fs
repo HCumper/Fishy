@@ -61,23 +61,31 @@ let inline private isPackedMoveMatch (packed:int32) (mv:Move) =
     packed <> 0 && packed = packMove mv
 
 /// Use TT entry as a cutoff if entry depth is sufficient and bound proves alpha/beta.
+/// Instrumentation:
+///  - markUseful() when TT actually returns a score
+///  - markDepthReject() when TT hit but entry depth insufficient
 let inline private tryUseTT (pr:ProbeResult) (depth:int) (alpha:int) (beta:int) : int voption =
-    if pr.Hit && int pr.Entry.Depth >= depth then
-        let s = int pr.Entry.Score
-        match pr.Entry.Bound with
-        | BoundExact -> ValueSome s
-        | BoundLower when s >= beta -> ValueSome s
-        | BoundUpper when s <= alpha -> ValueSome s
-        | _ -> ValueNone
+    if pr.Hit then
+        if int pr.Entry.Depth >= depth then
+            let s = int pr.Entry.Score
+            match pr.Entry.Bound with
+            | BoundExact ->
+                TranspositionTable.markUseful()
+                ValueSome s
+            | BoundLower when s >= beta ->
+                TranspositionTable.markUseful()
+                ValueSome s
+            | BoundUpper when s <= alpha ->
+                TranspositionTable.markUseful()
+                ValueSome s
+            | _ ->
+                ValueNone
+        else
+            // TT hit but entry not deep enough
+            TranspositionTable.markDepthReject()
+            ValueNone
     else
         ValueNone
-
-// =============================
-// Info output
-// =============================
-
-let writeInfo depth (nodeCount: int64) (nps: int64) now eval =
-    Uci.send $"info depth 0 nodes {nodeCount} nps {nps} time {now} score cp {eval}"
 
 // =============================
 // Search (Negamax + TT)
@@ -176,11 +184,11 @@ let rec negamax
 
                 store tt key bestMovePacked (clamp16 best) (clamp16 best) depth bound 0uy
                 best
-
+// set the search depth
 let private depthFromRequest (req: SearchRequest) =
     match req.Depth with
     | ValueSome d when d > 0 -> d
-    | _ -> 5
+    | _ -> 6
 
 /// Picks best move using negamax and UCI depth (default 5 if not provided).
 let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest) : Move voption =

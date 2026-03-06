@@ -12,8 +12,6 @@ open MakeMove
 open BoardHelpers
 open PieceCode
 
-open GenerateMoves
-open Attacks
 open Configuration
 open Search
 

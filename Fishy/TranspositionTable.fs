@@ -2,6 +2,7 @@
 
 open System
 open System.Runtime.InteropServices
+open System.Threading
 
 // ============================================================
 // Entry (16 bytes)
@@ -34,6 +35,64 @@ type TTEntry =
           Bound = bound
           Generation = generation
           Flags = flags }
+
+type TTStats =
+    { Probes: int64
+      Hits: int64
+      Useful: int64          // exact return or bound-caused cutoff (mark from Search)
+      Stores: int64
+      Overwrites: int64      // writing into a non-empty slot (incl same key replacement)
+      AgeRejects: int64      // stale hits rejected at probe-time
+      DepthRejects: int64 }  // depth-insufficient (mark from Search)
+
+// ============================================================
+// Thread-safe counters (Interlocked)
+// ============================================================
+
+let mutable private probes        = 0L
+let mutable private hits          = 0L
+let mutable private useful        = 0L
+let mutable private stores        = 0L
+let mutable private overwrites    = 0L
+let mutable private ageRejects    = 0L
+let mutable private depthRejects  = 0L
+
+let inline private incProbe ()        = Interlocked.Increment(&probes) |> ignore
+let inline private incHit ()          = Interlocked.Increment(&hits) |> ignore
+let inline private incUseful ()       = Interlocked.Increment(&useful) |> ignore
+let inline private incStore ()        = Interlocked.Increment(&stores) |> ignore
+let inline private incOverwrite ()    = Interlocked.Increment(&overwrites) |> ignore
+let inline private incAgeReject ()    = Interlocked.Increment(&ageRejects) |> ignore
+let inline private incDepthReject ()  = Interlocked.Increment(&depthRejects) |> ignore
+
+let resetStats () =
+    Interlocked.Exchange(&probes, 0L) |> ignore
+    Interlocked.Exchange(&hits, 0L) |> ignore
+    Interlocked.Exchange(&useful, 0L) |> ignore
+    Interlocked.Exchange(&stores, 0L) |> ignore
+    Interlocked.Exchange(&overwrites, 0L) |> ignore
+    Interlocked.Exchange(&ageRejects, 0L) |> ignore
+    Interlocked.Exchange(&depthRejects, 0L) |> ignore
+
+let getStats () : TTStats =
+    { Probes = Interlocked.Read(&probes)
+      Hits = Interlocked.Read(&hits)
+      Useful = Interlocked.Read(&useful)
+      Stores = Interlocked.Read(&stores)
+      Overwrites = Interlocked.Read(&overwrites)
+      AgeRejects = Interlocked.Read(&ageRejects)
+      DepthRejects = Interlocked.Read(&depthRejects) }
+
+/// Call this from Search when a TT entry actually returns a score
+/// (BoundExact, or BoundLower/Upper causes cutoff).
+let markUseful () : unit = incUseful ()
+
+/// Call this from Search when pr.Hit but pr.Entry.Depth < requested depth.
+let markDepthReject () : unit = incDepthReject ()
+
+// ============================================================
+// Key helpers
+// ============================================================
 
 let inline lock32OfKey (key:uint64) : uint32 =
     uint32 (key >>> 32)
@@ -138,7 +197,13 @@ type ProbeResult =
 let inline private bucketBaseIndex (tt:TranspositionTable) (key:uint64) : int =
     (indexOfKey tt.Mask key) * tt.BucketSize
 
+/// Probe increments:
+/// - Probes always
+/// - Hits when lock matches and entry is not stale
+/// - AgeRejects when lock matches but entry is stale (returned as miss)
 let probe (tt:TranspositionTable) (key:uint64) : ProbeResult =
+    incProbe ()
+
     let lock32 = lock32OfKey key
     let baseIdx = bucketBaseIndex tt key
 
@@ -148,10 +213,16 @@ let probe (tt:TranspositionTable) (key:uint64) : ProbeResult =
 
     while i < tt.BucketSize && not found do
         let cur = tt.Table[baseIdx + i]
-        // empty slots have Lock32=0u and must never be a hit
         if cur.Lock32 <> 0u && cur.Lock32 = lock32 then
-            found <- true
-            e <- cur
+            if isStale tt.Generation cur.Generation tt.MaxAge then
+                // treat as miss
+                incAgeReject ()
+                found <- false
+                // keep searching (in case of duplicates, though normally there aren't)
+            else
+                incHit ()
+                found <- true
+                e <- cur
         i <- i + 1
 
     { Hit = found; Entry = e }
@@ -165,14 +236,12 @@ let private chooseStoreSlot (tt:TranspositionTable) (key:uint64) : int =
     let mutable bestAge = -1
 
     // Priority: empty >> stale >> normal victim
-    // We still compute depth/age tie-break for non-empty.
     let mutable i = 0
     while i < tt.BucketSize do
         let idx = baseIdx + i
         let e = tt.Table[idx]
 
         if e.Lock32 = 0u then
-            // Empty slot is always best possible — return immediately.
             bestIdx <- idx
             i <- tt.BucketSize
         else
@@ -180,13 +249,8 @@ let private chooseStoreSlot (tt:TranspositionTable) (key:uint64) : int =
             let stale = age > tt.MaxAge
             let d = int e.Depth
 
-            // Higher is better
-            // 2 = stale, 1 = normal
             let priority = if stale then 2 else 1
 
-            // Compare: higher priority wins.
-            // If same priority, choose shallower depth.
-            // If same depth, choose older.
             if priority > bestPriority then
                 bestPriority <- priority
                 bestDepth <- d
@@ -201,7 +265,7 @@ let private chooseStoreSlot (tt:TranspositionTable) (key:uint64) : int =
             i <- i + 1
 
     bestIdx
-    
+
 let store
     (tt:TranspositionTable)
     (key:uint64)
@@ -212,6 +276,8 @@ let store
     (bound:byte)
     (flags:byte)
     : unit =
+
+    incStore ()
 
     let depthS =
         if depth < -128 then sbyte -128
@@ -229,20 +295,30 @@ let store
         let idx = baseIdx + i
         let cur = tt.Table[idx]
         if cur.Lock32 <> 0u && cur.Lock32 = lock32 then
+            // We are writing into an occupied slot (same key) => overwrite
+            incOverwrite ()
+
             if bound = BoundExact || shouldReplace tt.Generation tt.MaxAge depthS cur then
                 tt.Table[idx] <- TTEntry(lock32, bestMove, score, eval, depthS, bound, tt.Generation, flags)
             else
-                // Optional policy: "touch" on non-replace to keep it young.
-                // If you don't want that, delete this block.
+                // Not replacing due to depth/age policy; "touch" to keep young.
+                // (DepthReject counter is best recorded by Search, because it knows requested depth;
+                // but we *can* record a store-side depth reject too: new depth < old depth.)
+                if int depthS < int cur.Depth then
+                    incDepthReject ()
+
                 let mutable c = cur
                 c.Generation <- tt.Generation
                 tt.Table[idx] <- c
+
             done_ <- true
         i <- i + 1
 
     // 2) otherwise choose a slot in this bucket
     if not done_ then
         let idx = chooseStoreSlot tt key
+        let old = tt.Table[idx]
+        if old.Lock32 <> 0u then incOverwrite ()
         tt.Table[idx] <- TTEntry(lock32, bestMove, score, eval, depthS, bound, tt.Generation, flags)
 
 let hashFullPermille (tt:TranspositionTable) : int =
