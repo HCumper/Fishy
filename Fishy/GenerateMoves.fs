@@ -465,10 +465,10 @@ let generateAllLegalMoves
     
 let generateAllLegalCaptures
     (pos: Position)
-    (inCheck: Position -> Color -> bool)
+    (isInCheck: Position -> Color -> bool)
     : Move list =
 
-    generateAllLegalMoves pos inCheck
+    generateAllLegalMoves pos isInCheck
     |> List.filter (isCaptureMove pos)
     
 // For debugging only
