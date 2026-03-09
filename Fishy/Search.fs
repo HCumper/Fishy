@@ -11,13 +11,7 @@ open BoardHelpers.Attacks
 open Uci
 open TranspositionTable
 
-// Evaluation convention used throughout this module:
 // scores are always from the SIDE-TO-MOVE viewpoint.
-//
-// That means:
-//   + score => good for pos.State.ToPlay
-//   - score => bad for pos.State.ToPlay
-//
 // Negamax relies on this convention. After making a move and switching side,
 // the returned child score is negated.
 
@@ -196,6 +190,20 @@ let internal orderMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list)
 
     ttFirst @ capturesSorted @ quiets
 
+/// Capture-only ordering for quiescence.
+///
+///   1. TT move first, if present among captures
+///   2. Remaining captures sorted by MVV-LVA
+let internal orderQMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list) : Move list =
+    let ttFirst, rest =
+        if ttMovePacked = 0 then [], moves0
+        else moves0 |> List.partition (isPackedMoveMatch ttMovePacked)
+
+    let capturesSorted =
+        rest |> List.sortByDescending (mvvLvaScore pos)
+
+    ttFirst @ capturesSorted
+
 /// Root-only move ordering for iterative deepening:
 ///
 ///   1. Previous iteration PV/best move first
@@ -232,6 +240,142 @@ let internal orderRootMoves
         captures |> List.sortByDescending (mvvLvaScore pos)
 
     pvFirst @ ttFirst @ capturesSorted @ quiets
+
+// =============================
+// Quiescence
+// =============================
+
+/// Capture-only extension search used at the nominal leaf.
+///
+/// Stand-pat is the static evaluation from the current side-to-move viewpoint.
+/// If stand-pat already reaches beta, we fail high immediately.
+/// Otherwise we search forcing tactical continuations to reduce horizon effects.
+///
+/// Important:
+/// - If side to move is in check, stand-pat is not legal. In that case this
+///   function searches all legal evasions instead of only captures.
+/// - TT depth for quiescence is stored as 0.
+let rec quiescence
+    (tt: TranspositionTable)
+    (pos: Position)
+    (alpha: int)
+    (beta: int)
+    (stopwatch: Diagnostics.Stopwatch)
+    : int =
+
+    nodeCount <- nodeCount + 1L
+
+    if (nodeCount &&& 1023L) = 0L then
+        let now = stopwatch.ElapsedMilliseconds
+        if now - lastInfoTime >= infoIntervalMs then
+            lastInfoTime <- now
+            let nps = if now > 0L then nodeCount * 1000L / now else 0L
+            writeInfo 0 nodeCount nps now currentRootScore
+
+    let alphaOrig = alpha
+    let key = keyOfPos pos
+    let pr = probe tt key
+    let side = pos.State.ToPlay
+    let isInCheck = inCheck pos side
+
+    match tryUseTT pr 0 alpha beta with
+    | ValueSome score ->
+        score
+    | ValueNone ->
+        let mutable a = alpha
+        let mutable bestMovePacked = 0
+        let mutable best = negInf
+
+        if not isInCheck then
+            let standPat = evaluate pos
+
+            if standPat >= beta then
+                store tt key 0 (clamp16 standPat) (clamp16 standPat) 0 BoundLower 0uy
+                standPat
+            else
+                if standPat > a then
+                    a <- standPat
+                best <- standPat
+
+                let ttMovePacked =
+                    if pr.Hit then pr.Entry.Move else 0
+
+                let captures =
+                    generateAllLegalCaptures pos inCheck
+                    |> orderQMoves pos ttMovePacked
+
+                let mutable cutoff = false
+
+                for mv in captures do
+                    if not cutoff then
+                        let mutable p = pos
+                        let undo = makeMove &p mv
+
+                        let score =
+                            -(quiescence tt p (-beta) (-a) stopwatch)
+
+                        unmakeMove &p mv undo
+
+                        if score > best then
+                            best <- score
+                            bestMovePacked <- packMove mv
+
+                        if score > a then
+                            a <- score
+
+                        if a >= beta then
+                            cutoff <- true
+
+                let bound =
+                    if best <= alphaOrig then BoundUpper
+                    elif best >= beta then BoundLower
+                    else BoundExact
+
+                store tt key bestMovePacked (clamp16 best) (clamp16 best) 0 bound 0uy
+                best
+
+        else
+            // In check, quiescence must consider all legal evasions.
+            let moves0 = generateAllLegalMoves pos inCheck
+
+            if List.isEmpty moves0 then
+                let sc = -MateScore + InCheckPenalty
+                store tt key 0 (clamp16 sc) (clamp16 sc) 0 BoundExact 0uy
+                sc
+            else
+                let ttMovePacked =
+                    if pr.Hit then pr.Entry.Move else 0
+
+                let moves = orderMoves pos ttMovePacked moves0
+                let mutable cutoff = false
+
+                for mv in moves do
+                    if not cutoff then
+                        let mutable p = pos
+                        let undo = makeMove &p mv
+
+                        let score =
+                            -(quiescence tt p (-beta) (-a) stopwatch)
+
+                        unmakeMove &p mv undo
+
+                        if score > best then
+                            best <- score
+                            bestMovePacked <- packMove mv
+
+                        if score > a then
+                            a <- score
+
+                        if a >= beta then
+                            cutoff <- true
+
+                let bound =
+                    if best <= alphaOrig then BoundUpper
+                    elif best >= beta then BoundLower
+                    else BoundExact
+
+                store tt key bestMovePacked (clamp16 best) (clamp16 best) 0 bound 0uy
+                best
 
 // =============================
 // Search (Negamax + TT)
@@ -287,11 +431,7 @@ let rec negamax
 
     | ValueNone ->
         if depth <= 0 then
-            // Leaf: static evaluation only.
-            // Stored as exact because no further tree search was performed here.
-            let sc = evaluate pos
-            store tt key 0 (clamp16 sc) (clamp16 sc) 0 BoundExact 0uy
-            sc
+            quiescence tt pos alpha beta stopwatch
         else
             let side = pos.State.ToPlay
             let moves0 = generateAllLegalMoves pos inCheck

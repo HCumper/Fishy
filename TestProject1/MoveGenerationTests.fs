@@ -52,6 +52,12 @@ type AllMovesCase =
     { Name: string
       Fen: string
       ExpectedMoves: int }
+    
+type CaptureMovesCase =
+    { Name: string
+      Fen: string
+      ExpectedCaptures: int
+      ExpectedAllMoves: int option }
 
 // ============================================================================
 // Test Case Data - Static members for NUnit TestCaseSource
@@ -363,6 +369,45 @@ type TestData() =
                   Fen = "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq e6 0 4"
                   ExpectedMoves = 33 }
             ]
+            
+    static member CaptureMovesTestCases
+        with get() : CaptureMovesCase list =
+            [
+                { Name = "Quiet king and pawn position - no captures"
+                  Fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"
+                  ExpectedCaptures = 0
+                  ExpectedAllMoves = Some 6 }
+
+                { Name = "White pawn e4 can capture d5 and also push e5"
+                  Fen = "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1"
+                  ExpectedCaptures = 1
+                  ExpectedAllMoves = Some 7 }
+
+                { Name = "White pawn e4 can capture both d5 and f5 and also push e5"
+                  Fen = "7k/8/8/3p1p2/4P3/8/8/4K3 w - - 0 1"
+                  ExpectedCaptures = 2
+                  ExpectedAllMoves = Some 8 }
+
+                { Name = "Queen position with both captures and quiets"
+                  Fen = "7k/4q3/8/8/p3Q3/8/8/7K w - - 0 1"
+                  ExpectedCaptures = 2
+                  ExpectedAllMoves = None }
+
+                { Name = "En passant is included as a legal capture"
+                  Fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1"
+                  ExpectedCaptures = 1
+                  ExpectedAllMoves = Some 7 }
+
+                { Name = "En passant illegal because it exposes king - no capture returned"
+                  Fen = "k7/8/8/KPp4r/8/8/8/8 w - c6 0 1"
+                  ExpectedCaptures = 0
+                  ExpectedAllMoves = Some 4 }
+
+                { Name = "Check position where only capture replies exist"
+                  Fen = "4k3/8/8/8/8/8/4r3/3QK3 w - - 0 1"
+                  ExpectedCaptures = 2
+                  ExpectedAllMoves = None }
+            ]
 
 // ============================================================================
 // Test Runners
@@ -390,6 +435,36 @@ let private runAllMovesCase (c: AllMovesCase) =
         )
     )
 
+let private runCaptureMovesCase (c: CaptureMovesCase) =
+    withPosition c.Fen c.Name (fun pos ->
+        let allMoves = generateAllLegalMoves pos inCheck
+        let captureMoves = generateAllLegalCaptures pos inCheck
+
+        Assert.That(
+            captureMoves.Length,
+            Is.EqualTo(c.ExpectedCaptures),
+            $"{c.Name} - Expected {c.ExpectedCaptures} capture moves, got {captureMoves.Length}"
+        )
+
+        match c.ExpectedAllMoves with
+        | Some expectedAll ->
+            Assert.That(
+                allMoves.Length,
+                Is.EqualTo(expectedAll),
+                $"{c.Name} - Expected {expectedAll} total moves, got {allMoves.Length}"
+            )
+        | None ->
+            ()
+
+        // Every capture move must also appear in the full legal move list
+        for mv in captureMoves do
+            Assert.That(
+                allMoves |> List.contains mv,
+                Is.True,
+                $"{c.Name} - Capture move {mv} was not found in full legal move list"
+            )
+    )
+    
 // ============================================================================
 // Parameterized Tests
 // ============================================================================
@@ -422,6 +497,10 @@ let ``King move generation`` (case: MoveGenCase) =
 let ``All legal moves generation`` (case: AllMovesCase) =
     runAllMovesCase case
 
+[<TestCaseSource(typeof<TestData>, "CaptureMovesTestCases")>]
+let ``All legal captures generation`` (case: CaptureMovesCase) =
+    runCaptureMovesCase case
+    
 // ============================================================================
 // Additional Validation Tests
 // ============================================================================
@@ -451,6 +530,7 @@ let ``FEN parser handles all test positions`` () =
             TestData.PawnTestCases   |> List.map (fun c -> c.Fen)
             TestData.KingTestCases   |> List.map (fun c -> c.Fen)
             TestData.AllMovesTestCases |> List.map (fun c -> c.Fen)
+            TestData.CaptureMovesTestCases |> List.map (fun c -> c.Fen)
         ]
         |> List.distinct
 
@@ -507,6 +587,30 @@ let ``Moves from invalid square return empty list`` () =
         Assert.That(bishopMoves.Length, Is.EqualTo(0))
         Assert.That(rookMoves.Length, Is.EqualTo(0))
     )
+
+[<Test>]
+let ``All legal captures contains only captures`` () =
+    withPosition "7k/4q3/8/8/p3Q3/8/8/7K w - - 0 1" "Capture-only filter test" (fun pos ->
+        let captureMoves = generateAllLegalCaptures pos inCheck
+
+        Assert.That(captureMoves.Length, Is.GreaterThan(0), "Expected at least one capture")
+
+        for mv in captureMoves do
+            let target = Board.getSq pos.Board mv.To
+
+            let isCapture =
+                if target <> PieceCode.Empty then true
+                else
+                    PieceCode.absKind mv.Piece = PieceCode.Pawn
+                    && int mv.From.File <> int mv.To.File
+                    && match pos.State.EPSquare with
+                       | ValueSome ep -> ep.File = mv.To.File && ep.Rank = mv.To.Rank
+                       | ValueNone -> false
+
+            Assert.That(isCapture, Is.True, $"Move {mv} is not a capture")
+    )
+
+
 
 type PerftCase =
     { Name: string
