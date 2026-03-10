@@ -1,8 +1,10 @@
 ﻿module Uci
 
+open Types
 open System
 open System.Globalization
 open System.IO
+open BoardHelpers.PieceCode
 
 let mutable enableLogging = true
 
@@ -82,13 +84,14 @@ type UciOption =
 
 type SearchRequest =
     { Depth: int voption
-      MoveTimeMs: int voption
-      WTimeMs: int voption
-      BTimeMs: int voption
-      WIncMs: int voption
-      BIncMs: int voption
+      MoveTime: int voption
+      WTime: int voption
+      BTime: int voption
+      WInc: int voption
+      BInc: int voption
       Nodes: int64 voption
       Mate: int voption
+      MovesToGo: int voption
       Infinite: bool }
 
 type EngineApi =
@@ -164,13 +167,14 @@ let private parseGoRequest (raw:string) : SearchRequest =
     loop (tokens |> List.skip 1)
 
     { Depth = depth
-      MoveTimeMs = movetime
-      WTimeMs = wtime
-      BTimeMs = btime
-      WIncMs = winc
-      BIncMs = binc
+      MoveTime = movetime
+      WTime = wtime
+      BTime = btime
+      WInc = winc
+      BInc = binc
       Nodes = nodes
       Mate = mate
+      MovesToGo = ValueNone
       Infinite = infinite }
 
 // =============================
@@ -184,11 +188,35 @@ let private joinTokens (ts:string list) =
     String.Join(" ", ts)
 
 /// Use UciIO instead of Console.WriteLine directly.
-let writeInfo depth (nodeCount: int64) (nps: int64) now eval =
+let writeInfo depth (nodeCount: int64) (nps: int64) now eval (pv: string) =
     // keep your existing format (note your original hard-coded depth 0)
-    send $"info depth 0 nodes {nodeCount} nps {nps} time {now} score cp {eval}"
+    send $"info depth {depth} nodes {nodeCount} nps {nps} time {now} score cp {eval} pv {pv}"
     let s = TranspositionTable.getStats()
     send $"info string TT probes={s.Probes} hits={s.Hits} useful={s.Useful} stores={s.Stores} overwrites={s.Overwrites} ageRejects={s.AgeRejects} depthRejects={s.DepthRejects}"
+
+let moveToUci (mv:Move) : string =
+    let fileChar (f:byte) = char (int 'a' + int f)
+    let rankChar (r:byte) = char (int '1' + int r)
+
+    let f1 = fileChar mv.From.File
+    let r1 = rankChar mv.From.Rank
+    let f2 = fileChar mv.To.File
+    let r2 = rankChar mv.To.Rank
+
+    let promo =
+        if mv.PromoteTo = 0y then ""
+        else
+            match absKind mv.PromoteTo with
+            | Knight -> "n"
+            | Bishop -> "b"
+            | Rook   -> "r"
+            | Queen  -> "q"
+            | _      -> ""
+
+    $"{f1}{r1}{f2}{r2}{promo}"
+    
+let pvToUciString (pv: Move list) : string =
+    pv |> List.map moveToUci |> String.concat " "    
 
 let private parseSetOption (tokens:string list) : string voption * string voption =
     // tokens begins with "setoption"

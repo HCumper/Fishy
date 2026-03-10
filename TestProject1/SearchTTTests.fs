@@ -19,13 +19,14 @@ open Uci
 
 let mkReq (depth:int) : SearchRequest =
     { Depth = ValueSome depth
-      MoveTimeMs = ValueNone
-      WTimeMs = ValueNone
-      BTimeMs = ValueNone
-      WIncMs = ValueNone
-      BIncMs = ValueNone
+      MoveTime = ValueNone
+      WTime = ValueNone
+      BTime = ValueNone
+      WInc = ValueNone
+      BInc = ValueNone
       Nodes = ValueNone
       Mate = ValueNone
+      MovesToGo = ValueNone
       Infinite = false }
 
 let loadPos (fen:string) : Position =
@@ -114,7 +115,7 @@ let runChoose (tt:TranspositionTable) (pos:Position) (depth:int) =
 let runNegamax (tt:TranspositionTable) (pos:Position) (depth:int) (alpha:int) (beta:int) =
     Search.nodeCount <- 0L
     let sw = System.Diagnostics.Stopwatch.StartNew()
-    let score = Search.negamax tt pos depth alpha beta sw
+    let score = Search.negamax tt pos depth alpha beta sw {SoftMs = 1000; HardMs = 1000}
     let nodes = Search.nodeCount
     score, nodes
 

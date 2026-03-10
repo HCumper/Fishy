@@ -8,12 +8,10 @@ open Types
 open Fen
 open Uci
 open MakeMove
-
+open Search
 open BoardHelpers
-open PieceCode
 
 open Configuration
-open Search
 
 let private startFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -43,28 +41,6 @@ let private loadFen (fen:string) : Position option =
 let private newGame () =
     stopFlag <- false
     current <- None
-
-let moveToUci (mv:Move) : string =
-    // Internal coordinates are 0-based (0..7)
-    let fileChar (f:byte) = char (int 'a' + int f)
-    let rankChar (r:byte) = char (int '1' + int r)
-
-    let f1 = fileChar mv.From.File
-    let r1 = rankChar mv.From.Rank
-    let f2 = fileChar mv.To.File
-    let r2 = rankChar mv.To.Rank
-
-    let promo =
-        if mv.PromoteTo = 0y then ""
-        else
-            match PieceCode.absKind mv.PromoteTo with
-            | Knight -> "n"
-            | Bishop -> "b"
-            | Rook   -> "r"
-            | Queen  -> "q"
-            | _      -> ""
-
-    $"{f1}{r1}{f2}{r2}{promo}"
 
 let private applyUciMoves (basePos:Position) (moves:string list) : Position option =
     let mutable p = basePos
@@ -161,6 +137,7 @@ let private setPosition (commandLine: string) (_moves: string list) =
         | None -> current <- None
         | Some p0 ->
             current <- Some p0
+            
 let private search (req:SearchRequest) : string * string voption =
     stopFlag <- false
 

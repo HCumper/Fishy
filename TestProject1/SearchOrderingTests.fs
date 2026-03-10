@@ -19,13 +19,14 @@ open BoardHelpers.Attacks
 
 let mkReq (depth:int) : SearchRequest =
     { Depth = ValueSome depth
-      MoveTimeMs = ValueNone
-      WTimeMs = ValueNone
-      BTimeMs = ValueNone
-      WIncMs = ValueNone
-      BIncMs = ValueNone
+      MoveTime = ValueNone
+      WTime = ValueNone
+      BTime = ValueNone
+      WInc = ValueNone
+      BInc = ValueNone
       Nodes = ValueNone
       Mate = ValueNone
+      MovesToGo = ValueNone
       Infinite = false }
 
 let loadPos (fen:string) : Position =

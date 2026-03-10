@@ -24,6 +24,14 @@ let mutable lastInfoTime = 0L
 let mutable searchStartTime = 0L
 let mutable currentRootScore = 0
 let infoIntervalMs = 500L   // send periodic info at most twice per second
+let defaultSearchDepth = 6
+
+let mutable abortSearch = false
+let mutable softTimeUp = false
+
+type TimeBudget =
+    { SoftMs: int64
+      HardMs: int64 }
 
 let inline private otherColor (c: Color) =
     match c with
@@ -42,6 +50,16 @@ let MateScore = 30000
 let InCheckPenalty = 100
 
 let negInf = -MateScore - 1
+
+let inline private elapsedMs (stopwatch: Diagnostics.Stopwatch) =
+    stopwatch.ElapsedMilliseconds
+
+let inline private checkTime (budget: TimeBudget) (stopwatch: Diagnostics.Stopwatch) =
+    let t = elapsedMs stopwatch
+    if t >= budget.HardMs then
+        abortSearch <- true
+    elif t >= budget.SoftMs then
+        softTimeUp <- true
 
 // --------------------
 // TT helpers
@@ -124,6 +142,101 @@ let inline private tryUseTT (pr:ProbeResult) (depth:int) (alpha:int) (beta:int) 
     else
         ValueNone
 
+/// Maximum number of moves to emit in a GUI PV line.
+/// This is just a presentation limit, not a search limit.
+[<Literal>]
+let MaxPvLength = 32
+
+/// Try to find the actual legal move corresponding to a packed TT move.
+let private tryFindPackedMove (packed:int32) (moves: Move list) : Move voption =
+    if packed = 0 then
+        ValueNone
+    else
+        moves
+        |> List.tryFind (fun mv -> packMove mv = packed)
+        |> function
+           | Some mv -> ValueSome mv
+           | None -> ValueNone
+
+/// Extract a principal variation by following TT moves from the given position.
+let extractPv (tt: TranspositionTable) (rootPos: Position) (maxLen:int) : Move list =
+    let rec loop (pos: Position) (remaining:int) (visited:Set<uint64>) (acc: Move list) =
+        if remaining <= 0 then
+            List.rev acc
+        else
+            let key = keyOfPos pos
+
+            if visited.Contains key then
+                List.rev acc
+            else
+                let pr = probe tt key
+                if not pr.Hit || pr.Entry.Move = 0 then
+                    List.rev acc
+                else
+                    let legalMoves = generateAllLegalMoves pos inCheck
+                    match tryFindPackedMove pr.Entry.Move legalMoves with
+                    | ValueNone ->
+                        List.rev acc
+                    | ValueSome mv ->
+                        let mutable p = pos
+                        let undo = makeMove &p mv
+
+                        let acc' = mv :: acc
+                        let visited' = visited.Add key
+
+                        let result =
+                            loop p (remaining - 1) visited' acc'
+
+                        unmakeMove &p mv undo
+                        result
+
+    loop rootPos maxLen Set.empty []
+
+// --------------------
+// Time management
+// --------------------
+
+let private computeTimeBudget (pos: Position) (req: SearchRequest) : TimeBudget =
+    match req.MoveTime with
+    | ValueSome mt when mt > 0 ->
+        let hard = int64 mt
+        let soft = max 1L (hard * 9L / 10L)
+        { SoftMs = soft; HardMs = hard }
+
+    | _ ->
+        let myTimeOpt, myIncOpt =
+            match pos.State.ToPlay with
+            | Color.White -> req.WTime, req.WInc
+            | Color.Black -> req.BTime, req.BInc
+
+        match myTimeOpt with
+        | ValueSome myTime when myTime > 0 ->
+            let inc =
+                match myIncOpt with
+                | ValueSome x when x > 0 -> x
+                | _ -> 0
+
+            let movesToGo =
+                match req.MovesToGo with
+                | ValueSome n when n > 0 -> n
+                | _ -> 30
+
+            let baseTime =
+                (myTime / movesToGo) + (inc * 3 / 4)
+
+            let hard =
+                baseTime
+                |> max 10
+                |> min (myTime / 2)
+                |> int64
+
+            let soft = max 1L (hard * 7L / 10L)
+            { SoftMs = soft; HardMs = hard }
+
+        | _ ->
+            // No usable clock info: fall back to a fixed small budget.
+            { SoftMs = 1000L; HardMs = 5000L }
+
 // --------------------
 // Move ordering helpers
 // --------------------
@@ -146,10 +259,6 @@ let inline private movingPieceAt (pos: Position) (mv: Move) : sbyte =
     Board.getSq pos.Board mv.From
 
 /// Best-effort captured-piece detection for move ordering.
-///
-/// This currently infers captures from destination occupancy, so en passant is
-/// not recognized as a capture unless the Move type carries explicit capture
-/// information elsewhere. That does not affect correctness, only ordering.
 let inline private capturedPieceOf (pos: Position) (mv: Move) : sbyte =
     let dst = Board.getSq pos.Board mv.To
     if dst <> PieceCode.Empty then dst else PieceCode.Empty
@@ -160,8 +269,6 @@ let inline private isCapture (pos: Position) (mv: Move) : bool =
 
 /// MVV-LVA score used to sort captures:
 /// Most Valuable Victim, Least Valuable Attacker.
-///
-/// Higher score = search earlier.
 let inline private mvvLvaScore (pos: Position) (mv: Move) : int =
     let victim = capturedPieceOf pos mv
     if victim = PieceCode.Empty then Int32.MinValue
@@ -174,9 +281,6 @@ let inline private mvvLvaScore (pos: Position) (mv: Move) : int =
 ///   1. TT move first, if present in the generated move list
 ///   2. Remaining captures sorted by MVV-LVA
 ///   3. Remaining quiet moves in generator order
-///
-/// This is intentionally simple and cheap. Killer/history heuristics are not
-/// yet applied.
 let internal orderMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list) : Move list =
     let ttFirst, rest =
         if ttMovePacked = 0 then [], moves0
@@ -191,9 +295,6 @@ let internal orderMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list)
     ttFirst @ capturesSorted @ quiets
 
 /// Capture-only ordering for quiescence.
-///
-///   1. TT move first, if present among captures
-///   2. Remaining captures sorted by MVV-LVA
 let internal orderQMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list) : Move list =
     let ttFirst, rest =
         if ttMovePacked = 0 then [], moves0
@@ -204,15 +305,7 @@ let internal orderQMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list
 
     ttFirst @ capturesSorted
 
-/// Root-only move ordering for iterative deepening:
-///
-///   1. Previous iteration PV/best move first
-///   2. TT move next, if different
-///   3. Remaining captures by MVV-LVA
-///   4. Remaining quiet moves in generator order
-///
-/// Keeping the previous root best move first is usually the strongest ordering
-/// signal available at the next iteration.
+/// Root-only move ordering for iterative deepening.
 let internal orderRootMoves
     (pos: Position)
     (pvMove: Move voption)
@@ -245,161 +338,139 @@ let internal orderRootMoves
 // Quiescence
 // =============================
 
-/// Capture-only extension search used at the nominal leaf.
-///
-/// Stand-pat is the static evaluation from the current side-to-move viewpoint.
-/// If stand-pat already reaches beta, we fail high immediately.
-/// Otherwise we search forcing tactical continuations to reduce horizon effects.
-///
-/// Important:
-/// - If side to move is in check, stand-pat is not legal. In that case this
-///   function searches all legal evasions instead of only captures.
-/// - TT depth for quiescence is stored as 0.
 let rec quiescence
     (tt: TranspositionTable)
     (pos: Position)
     (alpha: int)
     (beta: int)
     (stopwatch: Diagnostics.Stopwatch)
+    (budget: TimeBudget)
     : int =
 
     nodeCount <- nodeCount + 1L
 
     if (nodeCount &&& 1023L) = 0L then
-        let now = stopwatch.ElapsedMilliseconds
-        if now - lastInfoTime >= infoIntervalMs then
-            lastInfoTime <- now
-            let nps = if now > 0L then nodeCount * 1000L / now else 0L
-            writeInfo 0 nodeCount nps now currentRootScore
+        checkTime budget stopwatch
 
-    let alphaOrig = alpha
-    let key = keyOfPos pos
-    let pr = probe tt key
-    let side = pos.State.ToPlay
-    let isInCheck = inCheck pos side
+    if abortSearch then
+        evaluate pos
+    else
+        let alphaOrig = alpha
+        let key = keyOfPos pos
+        let pr = probe tt key
+        let side = pos.State.ToPlay
+        let isInCheck = inCheck pos side
 
-    match tryUseTT pr 0 alpha beta with
-    | ValueSome score ->
-        score
-    | ValueNone ->
-        let mutable a = alpha
-        let mutable bestMovePacked = 0
-        let mutable best = negInf
+        match tryUseTT pr 0 alpha beta with
+        | ValueSome score ->
+            score
+        | ValueNone ->
+            let mutable a = alpha
+            let mutable bestMovePacked = 0
+            let mutable best = negInf
 
-        if not isInCheck then
-            let standPat = evaluate pos
+            if not isInCheck then
+                let standPat = evaluate pos
 
-            if standPat >= beta then
-                store tt key 0 (clamp16 standPat) (clamp16 standPat) 0 BoundLower 0uy
-                standPat
+                if standPat >= beta then
+                    store tt key 0 (clamp16 standPat) (clamp16 standPat) 0 BoundLower 0uy
+                    standPat
+                else
+                    if standPat > a then
+                        a <- standPat
+                    best <- standPat
+
+                    let ttMovePacked =
+                        if pr.Hit then pr.Entry.Move else 0
+
+                    let captures =
+                        generateAllLegalCaptures pos inCheck
+                        |> orderQMoves pos ttMovePacked
+
+                    let mutable cutoff = false
+
+                    for mv in captures do
+                        if not cutoff && not abortSearch then
+                            let mutable p = pos
+                            let undo = makeMove &p mv
+
+                            let score =
+                                -(quiescence tt p (-beta) (-a) stopwatch budget)
+
+                            unmakeMove &p mv undo
+
+                            if not abortSearch then
+                                if score > best then
+                                    best <- score
+                                    bestMovePacked <- packMove mv
+
+                                if score > a then
+                                    a <- score
+
+                                if a >= beta then
+                                    cutoff <- true
+
+                    if abortSearch then
+                        best
+                    else
+                        let bound =
+                            if best <= alphaOrig then BoundUpper
+                            elif best >= beta then BoundLower
+                            else BoundExact
+
+                        store tt key bestMovePacked (clamp16 best) (clamp16 best) 0 bound 0uy
+                        best
+
             else
-                if standPat > a then
-                    a <- standPat
-                best <- standPat
+                let moves0 = generateAllLegalMoves pos inCheck
 
-                let ttMovePacked =
-                    if pr.Hit then pr.Entry.Move else 0
+                if List.isEmpty moves0 then
+                    let sc = -MateScore + InCheckPenalty
+                    store tt key 0 (clamp16 sc) (clamp16 sc) 0 BoundExact 0uy
+                    sc
+                else
+                    let ttMovePacked =
+                        if pr.Hit then pr.Entry.Move else 0
 
-                let captures =
-                    generateAllLegalCaptures pos inCheck
-                    |> orderQMoves pos ttMovePacked
+                    let moves = orderMoves pos ttMovePacked moves0
+                    let mutable cutoff = false
 
-                let mutable cutoff = false
+                    for mv in moves do
+                        if not cutoff && not abortSearch then
+                            let mutable p = pos
+                            let undo = makeMove &p mv
 
-                for mv in captures do
-                    if not cutoff then
-                        let mutable p = pos
-                        let undo = makeMove &p mv
+                            let score =
+                                -(quiescence tt p (-beta) (-a) stopwatch budget)
 
-                        let score =
-                            -(quiescence tt p (-beta) (-a) stopwatch)
+                            unmakeMove &p mv undo
 
-                        unmakeMove &p mv undo
+                            if not abortSearch then
+                                if score > best then
+                                    best <- score
+                                    bestMovePacked <- packMove mv
 
-                        if score > best then
-                            best <- score
-                            bestMovePacked <- packMove mv
+                                if score > a then
+                                    a <- score
 
-                        if score > a then
-                            a <- score
+                                if a >= beta then
+                                    cutoff <- true
 
-                        if a >= beta then
-                            cutoff <- true
+                    if abortSearch then
+                        best
+                    else
+                        let bound =
+                            if best <= alphaOrig then BoundUpper
+                            elif best >= beta then BoundLower
+                            else BoundExact
 
-                let bound =
-                    if best <= alphaOrig then BoundUpper
-                    elif best >= beta then BoundLower
-                    else BoundExact
-
-                store tt key bestMovePacked (clamp16 best) (clamp16 best) 0 bound 0uy
-                best
-
-        else
-            // In check, quiescence must consider all legal evasions.
-            let moves0 = generateAllLegalMoves pos inCheck
-
-            if List.isEmpty moves0 then
-                let sc = -MateScore + InCheckPenalty
-                store tt key 0 (clamp16 sc) (clamp16 sc) 0 BoundExact 0uy
-                sc
-            else
-                let ttMovePacked =
-                    if pr.Hit then pr.Entry.Move else 0
-
-                let moves = orderMoves pos ttMovePacked moves0
-                let mutable cutoff = false
-
-                for mv in moves do
-                    if not cutoff then
-                        let mutable p = pos
-                        let undo = makeMove &p mv
-
-                        let score =
-                            -(quiescence tt p (-beta) (-a) stopwatch)
-
-                        unmakeMove &p mv undo
-
-                        if score > best then
-                            best <- score
-                            bestMovePacked <- packMove mv
-
-                        if score > a then
-                            a <- score
-
-                        if a >= beta then
-                            cutoff <- true
-
-                let bound =
-                    if best <= alphaOrig then BoundUpper
-                    elif best >= beta then BoundLower
-                    else BoundExact
-
-                store tt key bestMovePacked (clamp16 best) (clamp16 best) 0 bound 0uy
-                best
+                        store tt key bestMovePacked (clamp16 best) (clamp16 best) 0 bound 0uy
+                        best
 
 // =============================
 // Search (Negamax + TT)
 // =============================
-
-/// Fishy's heart
-/// Principal recursive search.
-///
-/// Negamax alpha-beta with TT probe/store and heuristic move ordering.
-///
-/// Invariants and conventions:
-/// - Returned score is always from the side-to-move viewpoint of `pos`.
-/// - Child scores are negated on return.
-/// - `depth` is remaining search depth in plies.
-/// - `alpha`/`beta` are the current node's search window in side-to-move units.
-/// - TT entries are used only when the stored depth is sufficient and the bound
-///   proves a result.
-///
-/// Terminal handling:
-/// - No legal moves + in check     => mate score
-/// - No legal moves + not in check => draw score 0
-///
-/// Correctness depends on makeMove/unmakeMove fully restoring board, side to
-/// move, castling state, EP state, king locations, and hash key.
+// Fishy's heart
 let rec negamax
     (tt: TranspositionTable)
     (pos: Position)
@@ -407,113 +478,107 @@ let rec negamax
     (alpha: int)
     (beta: int)
     (stopwatch: Diagnostics.Stopwatch)
+    (budget: TimeBudget)
     : int =
 
     nodeCount <- nodeCount + 1L
 
-    // Periodic UCI info while searching. This is intentionally throttled.
     if (nodeCount &&& 1023L) = 0L then
-        let now = stopwatch.ElapsedMilliseconds
-        if now - lastInfoTime >= infoIntervalMs then
-            lastInfoTime <- now
-            let nps = if now > 0L then nodeCount * 1000L / now else 0L
-            writeInfo depth nodeCount nps now currentRootScore
+        checkTime budget stopwatch
 
-    let alphaOrig = alpha
-    let key = keyOfPos pos
+    if abortSearch then
+        evaluate pos
+    else
+        let alphaOrig = alpha
+        let key = keyOfPos pos
 
-    // Probe TT before expanding the node.
-    let pr = probe tt key
+        // Avoid expanding the node if it is already in the TT.
+        let pr = probe tt key
 
-    match tryUseTT pr depth alpha beta with
-    | ValueSome score ->
-        score
+        match tryUseTT pr depth alpha beta with
+        | ValueSome score ->
+            score
 
-    | ValueNone ->
-        if depth <= 0 then
-            quiescence tt pos alpha beta stopwatch
-        else
-            let side = pos.State.ToPlay
-            let moves0 = generateAllLegalMoves pos inCheck
-
-            if List.isEmpty moves0 then
-                let sc =
-                    if inCheck pos side then
-                        // Checkmate: prefer shorter mates.
-                        -MateScore + (InCheckPenalty - depth)
-                    else
-                        // Stalemate/draw.
-                        0
-
-                store tt key 0 (clamp16 sc) (clamp16 sc) depth BoundExact 0uy
-                sc
+        | ValueNone ->
+            if depth <= 0 then
+                quiescence tt pos alpha beta stopwatch budget
             else
-                let ttMovePacked =
-                    if pr.Hit then pr.Entry.Move else 0
+                let side = pos.State.ToPlay
+                let moves0 = generateAllLegalMoves pos inCheck
 
-                let mutable a = alpha
-                let mutable best = negInf
-                let mutable bestMovePacked = 0
-                let mutable cutoff = false
+                if List.isEmpty moves0 then
+                    let sc =
+                        if inCheck pos side then
+                            // Checkmate: prefer shorter mates.
+                            -MateScore + (InCheckPenalty - depth)
+                        else
+                            // Stalemate/draw.
+                            0
 
-                let moves = orderMoves pos ttMovePacked moves0
+                    store tt key 0 (clamp16 sc) (clamp16 sc) depth BoundExact 0uy
+                    sc
+                else
+                    let ttMovePacked =
+                        if pr.Hit then pr.Entry.Move else 0
 
-                for mv in moves do
-                    if not cutoff then
-                        // Search child by make/unmake on a mutable position snapshot.
-                        let mutable p = pos
-                        let undo = makeMove &p mv
+                    let mutable a = alpha
+                    let mutable best = negInf
+                    let mutable bestMovePacked = 0
+                    let mutable cutoff = false
 
-                        let score =
-                            -(negamax tt p (depth - 1) (-beta) (-a) stopwatch)
+                    let moves = orderMoves pos ttMovePacked moves0
 
-                        unmakeMove &p mv undo
+                    for mv in moves do
+                        if not cutoff && not abortSearch then
+                            let mutable p = pos
+                            let undo = makeMove &p mv
 
-                        if score > best then
-                            best <- score
-                            bestMovePacked <- packMove mv
+                            let score =
+                                -(negamax tt p (depth - 1) (-beta) (-a) stopwatch budget)
 
-                        if score > a then
-                            a <- score
+                            unmakeMove &p mv undo
 
-                        if a >= beta then
-                            cutoff <- true
+                            if not abortSearch then
+                                if score > best then
+                                    best <- score
+                                    bestMovePacked <- packMove mv
 
-                // Store node result in TT using the standard alpha/beta bound logic.
-                let bound =
-                    if best <= alphaOrig then BoundUpper
-                    elif best >= beta then BoundLower
-                    else BoundExact
+                                if score > a then
+                                    a <- score
 
-                store tt key bestMovePacked (clamp16 best) (clamp16 best) depth bound 0uy
-                best
+                                if a >= beta then
+                                    cutoff <- true
+
+                    if abortSearch then
+                        best
+                    else
+                        let bound =
+                            if best <= alphaOrig then BoundUpper
+                            elif best >= beta then BoundLower
+                            else BoundExact
+
+                        store tt key bestMovePacked (clamp16 best) (clamp16 best) depth bound 0uy
+                        best
 
 /// Extracts search depth from the UCI request.
 /// Defaults to a small fixed depth when no explicit depth is provided.
 let private depthFromRequest (req: SearchRequest) =
     match req.Depth with
     | ValueSome d when d > 0 -> d
-    | _ -> 6
+    | _ -> defaultSearchDepth
 
 /// Root search entry point.
-///
-/// Uses iterative deepening from depth 1 up to the requested depth and returns
-/// the best move from the last completed iteration.
-///
-/// Benefits of iterative deepening here:
-/// - previous iteration best move can be searched first at the next depth,
-/// - TT entries from shallow searches improve deeper move ordering,
-/// - UCI info can be reported after each completed iteration.
-///
-/// TT generation is advanced once per root search, not once per node.
 let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest) : Move voption =
     let targetDepth = depthFromRequest req
     let stopwatch = Diagnostics.Stopwatch.StartNew()
+    let budget = computeTimeBudget pos req
 
     searchStartTime <- 0L
     lastInfoTime <- 0L
     nodeCount <- 0L
     currentRootScore <- 0
+    abortSearch <- false
+    softTimeUp <- false
 
     // One new TT generation per root search.
     newSearch tt
@@ -523,56 +588,72 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
     match rootMoves0 with
     | [] -> ValueNone
     | _ ->
-        let mutable bestMoveOverall = ValueNone
-        let mutable bestScoreOverall = negInf
-        let mutable rootMoves = rootMoves0
+        let rec iterate
+            (depth:int)
+            (bestMoveOverall: Move voption)
+            (bestScoreOverall:int)
+            (rootMoves: Move list)
+            : Move voption =
 
-        for depth = 1 to targetDepth do
-            let mutable bestMoveThisIter = ValueNone
-            let mutable bestScoreThisIter = negInf
-            let mutable alpha = -MateScore - 1
-            let beta = MateScore + 1
+            if depth > targetDepth || abortSearch || softTimeUp then
+                bestMoveOverall
+            else
+                let mutable bestMoveThisIter = ValueNone
+                let mutable bestScoreThisIter = negInf
+                let mutable alpha = -MateScore - 1
+                let beta = MateScore + 1
 
-            // Root TT probe used only for ordering here.
-            let rootKey = keyOfPos pos
-            let rootProbe = probe tt rootKey
-            let ttMovePacked =
-                if rootProbe.Hit then rootProbe.Entry.Move else 0
+                let rootKey = keyOfPos pos
+                let rootProbe = probe tt rootKey
+                let ttMovePacked =
+                    if rootProbe.Hit then rootProbe.Entry.Move else 0
 
-            let orderedMoves =
-                orderRootMoves pos bestMoveOverall ttMovePacked rootMoves
+                let orderedMoves =
+                    orderRootMoves pos bestMoveOverall ttMovePacked rootMoves
 
-            for mv in orderedMoves do
-                let mutable p = pos
-                let undo = makeMove &p mv
+                for mv in orderedMoves do
+                    if not abortSearch then
+                        let mutable p = pos
+                        let undo = makeMove &p mv
 
-                let score =
-                    -(negamax tt p (depth - 1) (-beta) (-alpha) stopwatch)
+                        let score =
+                            -(negamax tt p (depth - 1) (-beta) (-alpha) stopwatch budget)
 
-                unmakeMove &p mv undo
+                        unmakeMove &p mv undo
 
-                if score > bestScoreThisIter then
-                    bestScoreThisIter <- score
-                    bestMoveThisIter <- ValueSome mv
+                        if not abortSearch then
+                            if score > bestScoreThisIter then
+                                bestScoreThisIter <- score
+                                bestMoveThisIter <- ValueSome mv
 
-                if score > alpha then
-                    alpha <- score
+                            if score > alpha then
+                                alpha <- score
 
-            match bestMoveThisIter with
-            | ValueSome bm ->
-                bestMoveOverall <- ValueSome bm
-                bestScoreOverall <- bestScoreThisIter
-                currentRootScore <- bestScoreOverall
+                match bestMoveThisIter with
+                | ValueSome bm when not abortSearch ->
+                    let bestMoveOverall' = ValueSome bm
+                    let bestScoreOverall' = bestScoreThisIter
+                    currentRootScore <- bestScoreOverall'
 
-                // Keep the completed-iteration best move near the front for the
-                // next iteration, even before fresh root ordering is applied.
-                rootMoves <- putMoveFirst bm rootMoves
+                    let rootMoves' = putMoveFirst bm rootMoves
 
-                // Emit one info line per completed iteration.
-                let now = stopwatch.ElapsedMilliseconds
-                let nps = if now > 0L then nodeCount * 1000L / now else 0L
-                writeInfo depth nodeCount nps now bestScoreOverall
-            | ValueNone ->
-                ()
+                    let now = stopwatch.ElapsedMilliseconds
+                    let nps = if now > 0L then nodeCount * 1000L / now else 0L
 
-        bestMoveOverall
+                    let pvMoves = extractPv tt pos MaxPvLength
+                    let pvText =
+                        match pvMoves with
+                        | [] -> moveToUci bm
+                        | xs -> pvToUciString xs
+
+                    writeInfo depth nodeCount nps now bestScoreOverall' pvText
+
+                    if now >= budget.SoftMs then
+                        softTimeUp <- true
+
+                    iterate (depth + 1) bestMoveOverall' bestScoreOverall' rootMoves'
+
+                | _ ->
+                    bestMoveOverall
+
+        iterate 1 ValueNone negInf rootMoves0
