@@ -1,4 +1,46 @@
-﻿# Fishy Design Overview
+﻿# Fishy as a UCI Engine and How to Use It
+
+Fishy is a UCI chess engine. UCI, or Universal Chess Interface, is a standard text protocol used for communication between a chess engine and a chess GUI or other chess tool. In practice, that means Fishy is the calculation engine: it searches positions and chooses moves, while the GUI handles the board display, move entry, clocks, game management, and engine configuration.
+
+A UCI engine normally does not provide a full graphical chessboard interface of its own. The usual way to use Fishy is therefore to load it into a compatible chess GUI. That is the same model used by major UCI engines such as Stockfish, whose documentation explicitly notes that the engine itself is separate from the graphical interface.
+
+## What you can do with Fishy
+
+Once Fishy is connected to a GUI, you can use it to play games against the computer, analyze positions, analyze entire games, run engine-versus-engine matches, test openings, and adjust engine settings such as hash, threads, or other options Fishy may expose through UCI. Available options are normally reported by the engine during UCI initialization and then shown by the GUI in its engine configuration dialog.
+
+Chess GUIs you can use with Fishy
+
+Because Fishy uses UCI, it can be used with many chess GUIs that support that protocol. Common choices include Fritz / ChessBase, Arena, Cute Chess, BanksiaGUI, Scid vs. PC, and Lucas Chess. Scid vs. PC explicitly documents engine configuration and engine running, and BanksiaGUI presents itself as a downloadable free chess GUI for Windows, macOS, and Linux.
+
+In practical terms, the main differences are about emphasis rather than protocol. Some GUIs are especially convenient for ordinary play and analysis, some are popular for engine testing and tournaments, and some are stronger on database features. Scid vs. PC, for example, is positioned as a chess toolkit with database and engine support, while BanksiaGUI is presented as a cross-platform chess GUI.
+
+General setup steps in a chess GUI
+
+The setup process is broadly the same in most GUIs:
+
+Download or build the Fishy executable.
+
+Open your chess GUI.
+
+Go to the engine management section.
+
+Choose Add Engine, Install Engine, or similar.
+
+Browse to the Fishy executable.
+
+Let the GUI identify it as a UCI engine.
+
+Save the configuration.
+
+Select Fishy for play or analysis.
+
+This is the normal UCI workflow: the GUI launches the engine process and communicates with it using UCI commands over standard input and output.
+
+Using Fishy to play a game
+
+To play against Fishy in a GUI, start a new game, choose Fishy as one side, set the time control, and begin play. The GUI will send the current position and timing information to Fishy, and Fishy will respond with its chosen moves. The engine itself does not manage the visible board; it just receives commands and returns search information and moves.
+
+# Fishy Design Overview
 
 ## tl:dr
 Fishy is a classical chess engine written in F# and organized as a set of focused modules rather than a single monolithic system. Its design balances two competing goals: clarity of structure and efficiency in the parts of the engine that run millions of times during search. The engine therefore uses explicit types and clean module boundaries where possible, while accepting compact encodings, cached state, and controlled mutation in hot paths.
@@ -19,8 +61,6 @@ In summary, Fishy is structured around a compact, invariant-driven position mode
 
 
 ## Full documentation
-
-Purpose
 
 ## Purpose
 
