@@ -36,6 +36,20 @@ let QueenEg  = 900
 [<Literal>]
 let KingEg   = 0
 
+[<Literal>]
+let IsolatedPawnMgPenalty = 12
+[<Literal>]
+let IsolatedPawnEgPenalty = 8
+
+[<Literal>]
+let DoubledPawnMgPenalty = 10
+[<Literal>]
+let DoubledPawnEgPenalty = 14
+
+// rank-based passed pawn bonus by side-relative advancement:
+let passedPawnMgBonus : int[] = [| 0; 5; 10; 20; 35; 60; 100; 0 |]
+let passedPawnEgBonus : int[] = [| 0; 10; 20; 40; 70; 120; 200; 0 |]
+
 // -----------------------------
 // PSTs (2D: row 0 = rank8 .. row 7 = rank1)
 // -----------------------------
@@ -414,6 +428,124 @@ let inline private countMobility (pos: Position) : int =
     // Tune factor. Pseudo mobility counts are larger than legal move counts.
     (whiteMob - blackMob) * 2
 
+let inline private isWhitePawn (p:sbyte) = p = Pawn
+let inline private isBlackPawn (p:sbyte) = p = -Pawn
+
+let private buildPawnFileCounts (board: Board) =
+    let white = Array.zeroCreate<int> 8
+    let black = Array.zeroCreate<int> 8
+
+    for sq = 0 to 63 do
+        match board.[sq] with
+        | p when isWhitePawn p ->
+            white.[fileOf sq] <- white.[fileOf sq] + 1
+        | p when isBlackPawn p ->
+            black.[fileOf sq] <- black.[fileOf sq] + 1
+        | _ ->
+            ()
+
+    white, black
+
+let inline private hasFriendlyPawnOnAdjacentFile (file0:int) (fileCounts:int[]) =
+    let left  = file0 > 0 && fileCounts.[file0 - 1] > 0
+    let right = file0 < 7 && fileCounts.[file0 + 1] > 0
+    left || right
+
+let inline private whiteRelativeRank (sq:int) = rankOf sq
+let inline private blackRelativeRank (sq:int) = 7 - rankOf sq
+
+let private isWhitePassedPawn (board: Board) (sq:int) =
+    let f = fileOf sq
+    let r = rankOf sq
+    let fMin = max 0 (f - 1)
+    let fMax = min 7 (f + 1)
+
+    let mutable passed = true
+    let mutable ef = fMin
+    while passed && ef <= fMax do
+        let mutable er = r + 1
+        while passed && er <= 7 do
+            if board.[sqOf ef er] = -Pawn then
+                passed <- false
+            er <- er + 1
+        ef <- ef + 1
+
+    passed
+
+let private isBlackPassedPawn (board: Board) (sq:int) =
+    let f = fileOf sq
+    let r = rankOf sq
+    let fMin = max 0 (f - 1)
+    let fMax = min 7 (f + 1)
+
+    let mutable passed = true
+    let mutable ef = fMin
+    while passed && ef <= fMax do
+        let mutable er = r - 1
+        while passed && er >= 0 do
+            if board.[sqOf ef er] = -Pawn then
+                passed <- false
+            er <- er - 1
+        ef <- ef + 1
+
+    passed
+
+/// Returns pawn-structure score from White's viewpoint as MG and EG components.
+let private evalPawnStructure (pos: Position) : int * int =
+    let board = pos.Board
+    let whiteFileCounts, blackFileCounts = buildPawnFileCounts board
+
+    let mutable mg = 0
+    let mutable eg = 0
+
+    // isolated + passed
+    for sq = 0 to 63 do
+        match board.[sq] with
+        | p when isWhitePawn p ->
+            let f = fileOf sq
+
+            // isolated pawn penalty
+            if not (hasFriendlyPawnOnAdjacentFile f whiteFileCounts) then
+                mg <- mg - IsolatedPawnMgPenalty
+                eg <- eg - IsolatedPawnEgPenalty
+
+            // passed pawn bonus
+            if isWhitePassedPawn board sq then
+                let rr = whiteRelativeRank sq
+                mg <- mg + passedPawnMgBonus.[rr]
+                eg <- eg + passedPawnEgBonus.[rr]
+
+        | p when isBlackPawn p ->
+            let f = fileOf sq
+
+            // isolated pawn penalty (subtract from White view by adding for Black)
+            if not (hasFriendlyPawnOnAdjacentFile f blackFileCounts) then
+                mg <- mg + IsolatedPawnMgPenalty
+                eg <- eg + IsolatedPawnEgPenalty
+
+            // passed pawn bonus for Black is bad for White
+            if isBlackPassedPawn board sq then
+                let rr = blackRelativeRank sq
+                mg <- mg - passedPawnMgBonus.[rr]
+                eg <- eg - passedPawnEgBonus.[rr]
+
+        | _ ->
+            ()
+
+    // doubled pawns: apply per extra pawn on each file
+    for f = 0 to 7 do
+        if whiteFileCounts.[f] > 1 then
+            let extras = whiteFileCounts.[f] - 1
+            mg <- mg - extras * DoubledPawnMgPenalty
+            eg <- eg - extras * DoubledPawnEgPenalty
+
+        if blackFileCounts.[f] > 1 then
+            let extras = blackFileCounts.[f] - 1
+            mg <- mg + extras * DoubledPawnMgPenalty
+            eg <- eg + extras * DoubledPawnEgPenalty
+
+    mg, eg
+    
 // -----------------------------
 // Evaluation (tapered)
 // -----------------------------
@@ -431,9 +563,13 @@ let evaluate (pos: Position) : int =
             mgWhiteView <- mgWhiteView + pieceSqvMg.[pi].[sq]
             egWhiteView <- egWhiteView + pieceSqvEg.[pi].[sq]
 
-            // phase uses kind (0..5)
-            let k0 = pi % 6
+            let k0 = kind0 p
             phase <- phase + phaseWeightOfKind k0
+
+    let pawnMg, pawnEg = evalPawnStructure pos
+
+    let mgWhiteView = mgWhiteView + pawnMg
+    let egWhiteView = egWhiteView + pawnEg
 
     let phaseClamped =
         if phase < 0 then 0

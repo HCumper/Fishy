@@ -85,8 +85,6 @@ type TTEntry =
       BestMove: ValueOption<Move>
       Age: byte }
     
-type HashTable = Dictionary<int64, TTEntry>
-    
 type SearchTree =
     { State: GameState
       Move: ValueOption<Move>      // Move that led to this position

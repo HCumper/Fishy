@@ -610,8 +610,6 @@ let ``All legal captures contains only captures`` () =
             Assert.That(isCapture, Is.True, $"Move {mv} is not a capture")
     )
 
-
-
 type PerftCase =
     { Name: string
       Fen: string

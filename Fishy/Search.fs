@@ -24,7 +24,7 @@ let mutable lastInfoTime = 0L
 let mutable searchStartTime = 0L
 let mutable currentRootScore = 0
 let infoIntervalMs = 500L   // send periodic info at most twice per second
-let defaultSearchDepth = 6
+let defaultSearchDepth = 60
 
 let mutable abortSearch = false
 let mutable softTimeUp = false
@@ -208,6 +208,7 @@ let private computeTimeBudget (pos: Position) (req: SearchRequest) : TimeBudget 
             match pos.State.ToPlay with
             | Color.White -> req.WTime, req.WInc
             | Color.Black -> req.BTime, req.BInc
+            | _ -> req.WTime, req.WInc
 
         match myTimeOpt with
         | ValueSome myTime when myTime > 0 ->
@@ -567,6 +568,36 @@ let private depthFromRequest (req: SearchRequest) =
     | ValueSome d when d > 0 -> d
     | _ -> defaultSearchDepth
 
+let private shouldStartNextIteration
+    (budget: TimeBudget)
+    (elapsedNow: int64)
+    (prevCompletedElapsed: int64)
+    (lastCompletedElapsed: int64)
+    : bool =
+
+    let remainingSoft = budget.SoftMs - elapsedNow
+
+    if remainingSoft <= 0L then
+        false
+    else
+        let lastIterTime = elapsedNow - lastCompletedElapsed
+
+        if lastIterTime <= 0L then
+            true
+        else
+            let predictedNext =
+                if prevCompletedElapsed > 0L && lastCompletedElapsed > prevCompletedElapsed then
+                    let prevIterTime = lastCompletedElapsed - prevCompletedElapsed
+                    if prevIterTime > 0L then
+                        let ratioBased = lastIterTime * lastIterTime / prevIterTime
+                        max (lastIterTime * 2L) ratioBased
+                    else
+                        lastIterTime * 2L
+                else
+                    lastIterTime * 2L
+
+            predictedNext <= remainingSoft
+            
 /// Root search entry point.
 let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest) : Move voption =
     let targetDepth = depthFromRequest req
@@ -593,6 +624,8 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
             (bestMoveOverall: Move voption)
             (bestScoreOverall:int)
             (rootMoves: Move list)
+            (prevCompletedElapsed:int64)
+            (lastCompletedElapsed:int64)
             : Move voption =
 
             if depth > targetDepth || abortSearch || softTimeUp then
@@ -648,12 +681,27 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
 
                     writeInfo depth nodeCount nps now bestScoreOverall' pvText
 
+                    // Existing soft-stop rule: if soft limit already reached, stop.
                     if now >= budget.SoftMs then
                         softTimeUp <- true
 
-                    iterate (depth + 1) bestMoveOverall' bestScoreOverall' rootMoves'
+                    // Predict whether starting the next iteration is worthwhile.
+                    let startNext =
+                        not softTimeUp
+                        && shouldStartNextIteration budget now prevCompletedElapsed lastCompletedElapsed
+
+                    if startNext then
+                        iterate
+                            (depth + 1)
+                            bestMoveOverall'
+                            bestScoreOverall'
+                            rootMoves'
+                            lastCompletedElapsed
+                            now
+                    else
+                        bestMoveOverall'
 
                 | _ ->
                     bestMoveOverall
 
-        iterate 1 ValueNone negInf rootMoves0
+        iterate 1 ValueNone negInf rootMoves0 0L 0L
