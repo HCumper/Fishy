@@ -6,13 +6,13 @@ open NUnit.Framework
 
 /// Initialize a fresh 8x8 board from a FEN string.
 let initBoardFromFen (fen: string) : ValueOption<Position> =
-    let board : Board = Array2D.create 8 8 0y
+    let board : Board = Array.zeroCreate 64
     tryLoadPositionFromFen board fen
 
 /// Simple smoke test using the standard starting position FEN.
 [<Test>]
-let testInitStartPosition () : bool =
+let testInitStartPosition () =
     let startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     match initBoardFromFen startFen with
-    | ValueSome _ -> true
-    | ValueNone -> false
+    | ValueSome _ -> Assert.Pass()
+    | ValueNone -> Assert.Fail("Expected standard starting position FEN to load.")

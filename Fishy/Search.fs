@@ -568,6 +568,11 @@ let private depthFromRequest (req: SearchRequest) =
     | ValueSome d when d > 0 -> d
     | _ -> defaultSearchDepth
 
+let private isFixedDepthRequest (req: SearchRequest) =
+    match req.Depth with
+    | ValueSome d when d > 0 -> true
+    | _ -> false
+
 let private shouldStartNextIteration
     (budget: TimeBudget)
     (elapsedNow: int64)
@@ -601,6 +606,7 @@ let private shouldStartNextIteration
 /// Root search entry point.
 let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest) : Move voption =
     let targetDepth = depthFromRequest req
+    let fixedDepth = isFixedDepthRequest req
     let stopwatch = Diagnostics.Stopwatch.StartNew()
     let budget = computeTimeBudget pos req
 
@@ -628,7 +634,7 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
             (lastCompletedElapsed:int64)
             : Move voption =
 
-            if depth > targetDepth || abortSearch || softTimeUp then
+            if depth > targetDepth || abortSearch || (softTimeUp && not fixedDepth) then
                 bestMoveOverall
             else
                 let mutable bestMoveThisIter = ValueNone
@@ -668,6 +674,8 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
                     let bestScoreOverall' = bestScoreThisIter
                     currentRootScore <- bestScoreOverall'
 
+                    store tt rootKey (packMove bm) (clamp16 bestScoreThisIter) (clamp16 bestScoreThisIter) depth BoundExact 0uy
+
                     let rootMoves' = putMoveFirst bm rootMoves
 
                     let now = stopwatch.ElapsedMilliseconds
@@ -682,13 +690,16 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
                     writeInfo depth nodeCount nps now bestScoreOverall' pvText
 
                     // Existing soft-stop rule: if soft limit already reached, stop.
-                    if now >= budget.SoftMs then
+                    if now >= budget.SoftMs && not fixedDepth then
                         softTimeUp <- true
 
                     // Predict whether starting the next iteration is worthwhile.
                     let startNext =
-                        not softTimeUp
-                        && shouldStartNextIteration budget now prevCompletedElapsed lastCompletedElapsed
+                        if fixedDepth then
+                            depth < targetDepth
+                        else
+                            not softTimeUp
+                            && shouldStartNextIteration budget now prevCompletedElapsed lastCompletedElapsed
 
                     if startNext then
                         iterate

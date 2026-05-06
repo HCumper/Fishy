@@ -483,7 +483,7 @@ let private isBlackPassedPawn (board: Board) (sq:int) =
     while passed && ef <= fMax do
         let mutable er = r - 1
         while passed && er >= 0 do
-            if board.[sqOf ef er] = -Pawn then
+            if board.[sqOf ef er] = Pawn then
                 passed <- false
             er <- er - 1
         ef <- ef + 1
