@@ -2,6 +2,7 @@
 
 open Types
 open Fen
+open Zobrist
 open NUnit.Framework
 
 [<SetUp>]
@@ -30,5 +31,17 @@ let ``Start FEN round-trips arbitrary position back to identical string`` () =
     | ValueSome pos ->
         let roundTrippedFen = positionToFen pos
         Assert.That(roundTrippedFen, Is.EqualTo(startFen))
+    | ValueNone ->
+        Assert.Fail("FEN parse failed")
+
+[<Test>]
+let ``Loaded FEN initializes hash key`` () =
+    let fenAfterE4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+
+    match initBoardFromFen fenAfterE4 with
+    | ValueSome pos ->
+        let recomputed = hashPosition pos.Board pos.State
+        Assert.That(pos.State.HashKey, Is.EqualTo(recomputed))
+        Assert.That(pos.State.HashKey, Is.Not.EqualTo(0L))
     | ValueNone ->
         Assert.Fail("FEN parse failed")

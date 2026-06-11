@@ -103,7 +103,7 @@ let private tryParsePlacement (placement: string) (board: Board) : ValueOption<K
     else
         ValueNone
 
-/// Parse a full FEN string into a Position. HashKey remains 0L; compute after load if needed.
+/// Parse a full FEN string into a Position with HashKey initialized.
 let tryLoadPositionFromFen (board: Board) (fen: string) : ValueOption<Position> =
     let parts = splitFen fen
     if parts.Length <> 6 then ValueNone
@@ -129,13 +129,16 @@ let tryLoadPositionFromFen (board: Board) (fen: string) : ValueOption<Position> 
                             match tryParseUInt16 fullmove with
                             | ValueNone -> ValueNone
                             | ValueSome fmn ->
-                                let state =
+                                let state0 =
                                     { HashKey = 0L
                                       EPSquare = epSq
                                       FullMoveNumber = fmn
                                       CastlingRights = cr
                                       HalfMoveClock = hmc
                                       ToPlay = toPlay }
+
+                                let state =
+                                    { state0 with HashKey = Zobrist.hashPosition board state0 }
 
                                 ValueSome { Board = board; State = state; Kings = kings }
 
