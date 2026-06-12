@@ -114,6 +114,7 @@ let runChoose (tt:TranspositionTable) (pos:Position) (depth:int) =
 
 let runNegamax (tt:TranspositionTable) (pos:Position) (depth:int) (alpha:int) (beta:int) =
     Search.nodeCount <- 0L
+    Search.iidSearchCount <- 0
     let sw = System.Diagnostics.Stopwatch.StartNew()
     let score = Search.negamax tt pos depth alpha beta sw {SoftMs = 1000; HardMs = 1000}
     let nodes = Search.nodeCount
@@ -174,6 +175,54 @@ type SearchTTIntegrationTests () =
         let s2, n2 = runNegamax tt pos depth alpha beta
         Assert.That(s2, Is.EqualTo(s1))
         Assert.That(n2, Is.LessThan(n1), $"Expected TT hit to reduce nodes. n1={n1} n2={n2}")
+
+    [<Test>]
+    member _.``public negamax clears stale abort state before searching`` () =
+        let pos =
+            loadPos "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"
+
+        let tt = mkTT()
+        newSearch tt
+
+        Search.abortSearch <- true
+
+        let _score, nodes = runNegamax tt pos 1 -MateScore MateScore
+        let pr = probe tt (keyOf pos)
+
+        Assert.That(nodes, Is.GreaterThan(1L), "Expected search to continue past the root node")
+        Assert.That(pr.Hit, Is.True, "Expected a fresh public negamax call to store the searched root")
+
+    [<Test>]
+    member _.``internal iterative deepening seeds TT move when deep node has no TT move`` () =
+        let pos =
+            loadPos "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1"
+
+        let tt = mkTT()
+        newSearch tt
+
+        let _score, _nodes = runNegamax tt pos 4 -MateScore MateScore
+        let pr = probe tt (keyOf pos)
+
+        Assert.That(Search.iidSearchCount, Is.GreaterThan(0))
+        Assert.That(pr.Hit, Is.True)
+        Assert.That(pr.Entry.Move, Is.Not.EqualTo(0))
+
+    [<Test>]
+    member _.``internal iterative deepening is skipped when TT move already exists`` () =
+        let pos =
+            loadPos "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1"
+
+        let tt = mkTT()
+        let legalMove =
+            GenerateMoves.generateAllLegalMoves pos BoardHelpers.Attacks.inCheck
+            |> List.head
+
+        newSearch tt
+        store tt (keyOf pos) (Search.packMove legalMove) 0s 0s 1 BoundExact 0uy
+
+        let _score, _nodes = runNegamax tt pos 4 -MateScore MateScore
+
+        Assert.That(Search.iidSearchCount, Is.EqualTo(0))
         
     [<Test>]
     member _.``fen parsing`` () =
@@ -339,6 +388,50 @@ type SearchTTIntegrationTests () =
         let pr2 = probe tt sentinelKey
         Assert.That(pr2.Hit, Is.True, "Sentinel entry should still be present")
         Assert.That(pr2.Entry.Generation, Is.EqualTo(g2), "Entry should refresh to new generation")
+
+    [<Test>]
+    member _.``stale TT entries are rejected after max age`` () =
+        let tt = create { Mb = 1; BucketSize = 2; MaxAge = 1 }
+        let key = 0xA1B2C3D400000001UL
+
+        newSearch tt
+        store tt key 0 12s 12s 1 BoundExact 0uy
+
+        let fresh = probe tt key
+        Assert.That(fresh.Hit, Is.True, "Fresh entry should be usable")
+
+        newSearch tt
+        let stillYoung = probe tt key
+        Assert.That(stillYoung.Hit, Is.True, "Entry at max age should still be usable")
+
+        newSearch tt
+        resetStats()
+
+        let stale = probe tt key
+        let stats = getStats()
+
+        Assert.That(stale.Hit, Is.False, "Entry older than MaxAge should be rejected")
+        Assert.That(stats.AgeRejects, Is.EqualTo(1L))
+        Assert.That(stats.Hits, Is.EqualTo(0L))
+
+    [<Test>]
+    member _.``stale TT slot is replaced by newer key in same bucket`` () =
+        let tt = create { Mb = 1; BucketSize = 1; MaxAge = 0 }
+        let oldKey = 0x1111111100000001UL
+        let newKey = 0x2222222200000001UL
+
+        newSearch tt
+        store tt oldKey 0 10s 10s 1 BoundExact 0uy
+        Assert.That((probe tt oldKey).Hit, Is.True)
+
+        newSearch tt
+        store tt newKey 0 20s 20s 1 BoundExact 0uy
+
+        Assert.That((probe tt oldKey).Hit, Is.False)
+
+        let newProbe = probe tt newKey
+        Assert.That(newProbe.Hit, Is.True)
+        Assert.That(int newProbe.Entry.Score, Is.EqualTo(20))
     
     [<Test>]
     member _.``evaluate startpos is zero (symmetry)`` () =

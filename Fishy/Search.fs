@@ -25,9 +25,29 @@ let mutable searchStartTime = 0L
 let mutable currentRootScore = 0
 let infoIntervalMs = 500L   // send periodic info at most twice per second
 let defaultSearchDepth = 60
+let mutable iidSearchCount = 0
+let mutable aspirationResearchCount = 0
 
 let mutable abortSearch = false
 let mutable softTimeUp = false
+
+[<Literal>]
+let private MaxKillerPly = 128
+
+[<Literal>]
+let private IidMinDepth = 4
+
+[<Literal>]
+let private IidReduction = 2
+
+[<Literal>]
+let private AspirationInitialWindow = 50
+
+let private killerMoves : int32[,] =
+    Array2D.zeroCreate MaxKillerPly 2
+
+let private historyScores : int[,,] =
+    Array3D.zeroCreate 2 64 64
 
 type TimeBudget =
     { SoftMs: int64
@@ -48,6 +68,9 @@ let MateScore = 30000
 /// than more distant mates.
 [<Literal>]
 let InCheckPenalty = 100
+
+[<Literal>]
+let private AspirationMaxWindow = MateScore + 1
 
 let negInf = -MateScore - 1
 
@@ -98,6 +121,43 @@ let internal packMove (mv: Move) : int32 =
 /// True when a TT-stored packed move matches a generated legal move.
 let inline private isPackedMoveMatch (packed:int32) (mv:Move) =
     packed <> 0 && packed = packMove mv
+
+let internal clearKillerMoves () =
+    for ply = 0 to MaxKillerPly - 1 do
+        killerMoves.[ply, 0] <- 0
+        killerMoves.[ply, 1] <- 0
+
+let internal clearHistoryScores () =
+    Array.Clear(historyScores, 0, historyScores.Length)
+
+let private rememberKiller (ply:int) (mv:Move) =
+    if ply >= 0 && ply < MaxKillerPly then
+        let packed = packMove mv
+        if packed <> 0 && killerMoves.[ply, 0] <> packed then
+            killerMoves.[ply, 1] <- killerMoves.[ply, 0]
+            killerMoves.[ply, 0] <- packed
+
+let internal rememberKillerForTests ply mv =
+    rememberKiller ply mv
+
+let inline private squareIndex (sq: Coordinates) =
+    int sq.File + 8 * int sq.Rank
+
+let inline private colorIndex (c: Color) =
+    if c = Color.White then 0 else 1
+
+let private historyScore (side: Color) (mv: Move) =
+    historyScores.[colorIndex side, squareIndex mv.From, squareIndex mv.To]
+
+let private rememberHistory (side: Color) (depth: int) (mv: Move) =
+    let ci = colorIndex side
+    let fromSq = squareIndex mv.From
+    let toSq = squareIndex mv.To
+    let bonus = max 1 (depth * depth)
+    historyScores.[ci, fromSq, toSq] <- min 1_000_000 (historyScores.[ci, fromSq, toSq] + bonus)
+
+let internal rememberHistoryForTests side depth mv =
+    rememberHistory side depth mv
 
 /// Root-only helper used by iterative deepening.
 ///
@@ -264,9 +324,20 @@ let inline private capturedPieceOf (pos: Position) (mv: Move) : sbyte =
     let dst = Board.getSq pos.Board mv.To
     if dst <> PieceCode.Empty then dst else PieceCode.Empty
 
+let inline private isEnPassantCapture (pos: Position) (mv: Move) : bool =
+    PieceCode.absKind mv.Piece = PieceCode.Pawn
+    && int mv.From.File <> int mv.To.File
+    && capturedPieceOf pos mv = PieceCode.Empty
+    && match pos.State.EPSquare with
+       | ValueSome ep -> ep.File = mv.To.File && ep.Rank = mv.To.Rank
+       | ValueNone -> false
+
 /// True for ordinary captures detectable from the current destination square.
 let inline private isCapture (pos: Position) (mv: Move) : bool =
-    capturedPieceOf pos mv <> PieceCode.Empty
+    capturedPieceOf pos mv <> PieceCode.Empty || isEnPassantCapture pos mv
+
+let inline private isQuietKillerCandidate (pos: Position) (mv: Move) : bool =
+    not (isCapture pos mv) && mv.PromoteTo = PieceCode.Empty
 
 /// MVV-LVA score used to sort captures:
 /// Most Valuable Victim, Least Valuable Attacker.
@@ -277,12 +348,151 @@ let inline private mvvLvaScore (pos: Position) (mv: Move) : int =
         let attacker = movingPieceAt pos mv
         pieceValueFromCode victim * 100 - pieceValueFromCode attacker
 
+let inline private onBoard (file:int) (rank:int) =
+    file >= MinFileRank && file <= MaxFileRank &&
+    rank >= MinFileRank && rank <= MaxFileRank
+
+let inline private isColorPiece (side: Color) (p: sbyte) =
+    p <> PieceCode.Empty &&
+    ((side = Color.White && PieceCode.isWhite p) ||
+     (side = Color.Black && PieceCode.isBlack p))
+
+let private leastValuableAttacker (board: Board) (target: Coordinates) (side: Color) : (Coordinates * sbyte) voption =
+    let tf = int target.File
+    let tr = int target.Rank
+
+    let mutable bestSq = Unchecked.defaultof<Coordinates>
+    let mutable bestPiece = PieceCode.Empty
+    let mutable bestValue = Int32.MaxValue
+
+    let inline consider (sq: Coordinates) =
+        let p = Board.getSq board sq
+        if isColorPiece side p then
+            let value = pieceValueFromCode p
+            if value < bestValue then
+                bestSq <- sq
+                bestPiece <- p
+                bestValue <- value
+
+    let inline considerKind (sq: Coordinates) (kind: sbyte) =
+        let p = Board.getSq board sq
+        if isColorPiece side p && PieceCode.absKind p = kind then
+            let value = pieceValueFromCode p
+            if value < bestValue then
+                bestSq <- sq
+                bestPiece <- p
+                bestValue <- value
+
+    let pawnSourceRank = if side = Color.White then tr - 1 else tr + 1
+    for df in [| -1; 1 |] do
+        let f = tf + df
+        if onBoard f pawnSourceRank then
+            considerKind { File = byte f; Rank = byte pawnSourceRank } PieceCode.Pawn
+
+    for df, dr in [| (1, 2); (2, 1); (-1, 2); (-2, 1); (1, -2); (2, -1); (-1, -2); (-2, -1) |] do
+        let f = tf + df
+        let r = tr + dr
+        if onBoard f r then
+            considerKind { File = byte f; Rank = byte r } PieceCode.Knight
+
+    for df, dr in [| (1, 0); (1, 1); (0, 1); (-1, 1); (-1, 0); (-1, -1); (0, -1); (1, -1) |] do
+        let f = tf + df
+        let r = tr + dr
+        if onBoard f r then
+            considerKind { File = byte f; Rank = byte r } PieceCode.King
+
+    let inline scan (df:int) (dr:int) (kind1:sbyte) (kind2:sbyte) =
+        let mutable f = tf + df
+        let mutable r = tr + dr
+        let mutable blocked = false
+        while not blocked && onBoard f r do
+            let sq = { File = byte f; Rank = byte r }
+            let p = Board.getSq board sq
+            if p = PieceCode.Empty then
+                f <- f + df
+                r <- r + dr
+            else
+                if isColorPiece side p then
+                    let k = PieceCode.absKind p
+                    if k = kind1 || k = kind2 then
+                        consider sq
+                blocked <- true
+
+    for df, dr in [| (1, 1); (1, -1); (-1, 1); (-1, -1) |] do
+        scan df dr PieceCode.Bishop PieceCode.Queen
+
+    for df, dr in [| (1, 0); (-1, 0); (0, 1); (0, -1) |] do
+        scan df dr PieceCode.Rook PieceCode.Queen
+
+    if bestPiece = PieceCode.Empty then ValueNone
+    else ValueSome (bestSq, bestPiece)
+
+let internal see (pos: Position) (mv: Move) : int =
+    if not (isCapture pos mv) then
+        0
+    else
+        let board = pos.Board.Clone() :?> Board
+        let target = mv.To
+        let movingPiece = Board.getSq board mv.From
+        let capturedPiece =
+            if isEnPassantCapture pos mv then
+                Board.getFR board (int mv.To.File) (int mv.From.Rank)
+            else
+                Board.getSq board target
+
+        let promotedPiece =
+            if mv.PromoteTo <> PieceCode.Empty then mv.PromoteTo else movingPiece
+
+        let promotionGain =
+            if mv.PromoteTo <> PieceCode.Empty then
+                pieceValueFromCode promotedPiece - pieceValueFromCode movingPiece
+            else
+                0
+
+        let gains = ResizeArray<int>(8)
+        gains.Add(pieceValueFromCode capturedPiece + promotionGain)
+
+        Board.setSq board mv.From PieceCode.Empty
+        if isEnPassantCapture pos mv then
+            Board.setFR board (int mv.To.File) (int mv.From.Rank) PieceCode.Empty
+        Board.setSq board target promotedPiece
+
+        let mutable side = otherColor pos.State.ToPlay
+        let mutable pieceOnTarget = promotedPiece
+        let mutable done_ = false
+
+        while not done_ do
+            match leastValuableAttacker board target side with
+            | ValueNone ->
+                done_ <- true
+            | ValueSome (fromSq, attacker) ->
+                gains.Add(pieceValueFromCode pieceOnTarget - gains.[gains.Count - 1])
+                Board.setSq board fromSq PieceCode.Empty
+                Board.setSq board target attacker
+                pieceOnTarget <- attacker
+                side <- otherColor side
+
+        for i = gains.Count - 2 downto 0 do
+            gains.[i] <- -max (-gains.[i]) gains.[i + 1]
+
+        gains.[0]
+
+let private captureOrderScore (pos: Position) (mv: Move) =
+    see pos mv * 100000 + mvvLvaScore pos mv
+
 /// Non-root move ordering policy:
 ///
 ///   1. TT move first, if present in the generated move list
 ///   2. Remaining captures sorted by MVV-LVA
 ///   3. Remaining quiet moves in generator order
-let internal orderMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list) : Move list =
+let internal orderMovesWithKillers
+    (pos: Position)
+    (ttMovePacked:int32)
+    (killer1Packed:int32)
+    (killer2Packed:int32)
+    (moves0: Move list)
+    : Move list =
+
     let ttFirst, rest =
         if ttMovePacked = 0 then [], moves0
         else moves0 |> List.partition (isPackedMoveMatch ttMovePacked)
@@ -291,9 +501,23 @@ let internal orderMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list)
         rest |> List.partition (isCapture pos)
 
     let capturesSorted =
-        captures |> List.sortByDescending (mvvLvaScore pos)
+        captures |> List.sortByDescending (captureOrderScore pos)
 
-    ttFirst @ capturesSorted @ quiets
+    let killer1, restAfterK1 =
+        if killer1Packed = 0 then [], quiets
+        else quiets |> List.partition (isPackedMoveMatch killer1Packed)
+
+    let killer2, quietRest =
+        if killer2Packed = 0 || killer2Packed = killer1Packed then [], restAfterK1
+        else restAfterK1 |> List.partition (isPackedMoveMatch killer2Packed)
+
+    let quietsByHistory =
+        quietRest |> List.sortByDescending (historyScore pos.State.ToPlay)
+
+    ttFirst @ capturesSorted @ killer1 @ killer2 @ quietsByHistory
+
+let internal orderMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list) : Move list =
+    orderMovesWithKillers pos ttMovePacked 0 0 moves0
 
 /// Capture-only ordering for quiescence.
 let internal orderQMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list) : Move list =
@@ -302,7 +526,7 @@ let internal orderQMoves (pos: Position) (ttMovePacked:int32) (moves0: Move list
         else moves0 |> List.partition (isPackedMoveMatch ttMovePacked)
 
     let capturesSorted =
-        rest |> List.sortByDescending (mvvLvaScore pos)
+        rest |> List.sortByDescending (captureOrderScore pos)
 
     ttFirst @ capturesSorted
 
@@ -331,7 +555,7 @@ let internal orderRootMoves
         rest2 |> List.partition (isCapture pos)
 
     let capturesSorted =
-        captures |> List.sortByDescending (mvvLvaScore pos)
+        captures |> List.sortByDescending (captureOrderScore pos)
 
     pvFirst @ ttFirst @ capturesSorted @ quiets
 
@@ -472,7 +696,7 @@ let rec quiescence
 // Search (Negamax + TT)
 // =============================
 // Fishy's heart
-let rec negamax
+let rec private negamaxAtPly
     (tt: TranspositionTable)
     (pos: Position)
     (depth: int)
@@ -480,6 +704,7 @@ let rec negamax
     (beta: int)
     (stopwatch: Diagnostics.Stopwatch)
     (budget: TimeBudget)
+    (ply: int)
     : int =
 
     nodeCount <- nodeCount + 1L
@@ -519,15 +744,33 @@ let rec negamax
                     store tt key 0 (clamp16 sc) (clamp16 sc) depth BoundExact 0uy
                     sc
                 else
-                    let ttMovePacked =
+                    let mutable ttMovePacked =
                         if pr.Hit then pr.Entry.Move else 0
+
+                    if ttMovePacked = 0
+                       && depth >= IidMinDepth
+                       && not abortSearch
+                       && not (inCheck pos side) then
+                        iidSearchCount <- iidSearchCount + 1
+                        let iidDepth = max 1 (depth - IidReduction)
+                        let _ = negamaxAtPly tt pos iidDepth alpha beta stopwatch budget ply
+
+                        if not abortSearch then
+                            let iidProbe = probe tt key
+                            if iidProbe.Hit then
+                                ttMovePacked <- iidProbe.Entry.Move
 
                     let mutable a = alpha
                     let mutable best = negInf
                     let mutable bestMovePacked = 0
                     let mutable cutoff = false
 
-                    let moves = orderMoves pos ttMovePacked moves0
+                    let killer1Packed =
+                        if ply >= 0 && ply < MaxKillerPly then killerMoves.[ply, 0] else 0
+                    let killer2Packed =
+                        if ply >= 0 && ply < MaxKillerPly then killerMoves.[ply, 1] else 0
+
+                    let moves = orderMovesWithKillers pos ttMovePacked killer1Packed killer2Packed moves0
 
                     for mv in moves do
                         if not cutoff && not abortSearch then
@@ -535,7 +778,7 @@ let rec negamax
                             let undo = makeMove &p mv
 
                             let score =
-                                -(negamax tt p (depth - 1) (-beta) (-a) stopwatch budget)
+                                -(negamaxAtPly tt p (depth - 1) (-beta) (-a) stopwatch budget (ply + 1))
 
                             unmakeMove &p mv undo
 
@@ -548,6 +791,9 @@ let rec negamax
                                     a <- score
 
                                 if a >= beta then
+                                    if isQuietKillerCandidate pos mv then
+                                        rememberKiller ply mv
+                                        rememberHistory pos.State.ToPlay depth mv
                                     cutoff <- true
 
                     if abortSearch then
@@ -560,6 +806,20 @@ let rec negamax
 
                         store tt key bestMovePacked (clamp16 best) (clamp16 best) depth bound 0uy
                         best
+
+let negamax
+    (tt: TranspositionTable)
+    (pos: Position)
+    (depth: int)
+    (alpha: int)
+    (beta: int)
+    (stopwatch: Diagnostics.Stopwatch)
+    (budget: TimeBudget)
+    : int =
+
+    abortSearch <- false
+    softTimeUp <- false
+    negamaxAtPly tt pos depth alpha beta stopwatch budget 0
 
 /// Extracts search depth from the UCI request.
 /// Defaults to a small fixed depth when no explicit depth is provided.
@@ -614,8 +874,12 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
     lastInfoTime <- 0L
     nodeCount <- 0L
     currentRootScore <- 0
+    iidSearchCount <- 0
+    aspirationResearchCount <- 0
     abortSearch <- false
     softTimeUp <- false
+    clearKillerMoves()
+    clearHistoryScores()
 
     // One new TT generation per root search.
     newSearch tt
@@ -637,36 +901,79 @@ let chooseBestMove (tt: TranspositionTable) (pos: Position) (req: SearchRequest)
             if depth > targetDepth || abortSearch || (softTimeUp && not fixedDepth) then
                 bestMoveOverall
             else
-                let mutable bestMoveThisIter = ValueNone
-                let mutable bestScoreThisIter = negInf
-                let mutable alpha = -MateScore - 1
-                let beta = MateScore + 1
+                let fullAlpha = -MateScore - 1
+                let fullBeta = MateScore + 1
 
                 let rootKey = keyOfPos pos
-                let rootProbe = probe tt rootKey
-                let ttMovePacked =
-                    if rootProbe.Hit then rootProbe.Entry.Move else 0
 
-                let orderedMoves =
-                    orderRootMoves pos bestMoveOverall ttMovePacked rootMoves
+                let searchRootWindow (alphaStart:int) (beta:int) =
+                    let rootProbe = probe tt rootKey
+                    let ttMovePacked =
+                        if rootProbe.Hit then rootProbe.Entry.Move else 0
 
-                for mv in orderedMoves do
-                    if not abortSearch then
-                        let mutable p = pos
-                        let undo = makeMove &p mv
+                    let orderedMoves =
+                        orderRootMoves pos bestMoveOverall ttMovePacked rootMoves
 
-                        let score =
-                            -(negamax tt p (depth - 1) (-beta) (-alpha) stopwatch budget)
+                    let mutable bestMoveThisIter = ValueNone
+                    let mutable bestScoreThisIter = negInf
+                    let mutable alpha = alphaStart
+                    let mutable cutoff = false
 
-                        unmakeMove &p mv undo
+                    for mv in orderedMoves do
+                        if not abortSearch && not cutoff then
+                            let mutable p = pos
+                            let undo = makeMove &p mv
 
-                        if not abortSearch then
-                            if score > bestScoreThisIter then
-                                bestScoreThisIter <- score
-                                bestMoveThisIter <- ValueSome mv
+                            let score =
+                                -(negamaxAtPly tt p (depth - 1) (-beta) (-alpha) stopwatch budget 1)
 
-                            if score > alpha then
-                                alpha <- score
+                            unmakeMove &p mv undo
+
+                            if not abortSearch then
+                                if score > bestScoreThisIter then
+                                    bestScoreThisIter <- score
+                                    bestMoveThisIter <- ValueSome mv
+
+                                if score > alpha then
+                                    alpha <- score
+
+                                if alpha >= beta then
+                                    cutoff <- true
+
+                    bestMoveThisIter, bestScoreThisIter
+
+                let rec searchWithAspiration (alpha:int) (beta:int) (window:int) =
+                    let bestMoveThisIter, bestScoreThisIter = searchRootWindow alpha beta
+
+                    if abortSearch then
+                        bestMoveThisIter, bestScoreThisIter
+                    else
+                        match bestMoveThisIter with
+                        | ValueNone ->
+                            bestMoveThisIter, bestScoreThisIter
+                        | ValueSome _ when bestScoreThisIter <= alpha && alpha > fullAlpha ->
+                            aspirationResearchCount <- aspirationResearchCount + 1
+                            let nextWindow = min AspirationMaxWindow (window * 2)
+                            let nextAlpha = max fullAlpha (bestScoreThisIter - nextWindow)
+                            searchWithAspiration nextAlpha beta nextWindow
+                        | ValueSome _ when bestScoreThisIter >= beta && beta < fullBeta ->
+                            aspirationResearchCount <- aspirationResearchCount + 1
+                            let nextWindow = min AspirationMaxWindow (window * 2)
+                            let nextBeta = min fullBeta (bestScoreThisIter + nextWindow)
+                            searchWithAspiration alpha nextBeta nextWindow
+                        | _ ->
+                            bestMoveThisIter, bestScoreThisIter
+
+                let initialAlpha, initialBeta, initialWindow =
+                    if depth <= 1 || bestMoveOverall = ValueNone then
+                        fullAlpha, fullBeta, AspirationMaxWindow
+                    else
+                        max fullAlpha (bestScoreOverall - AspirationInitialWindow),
+                        min fullBeta (bestScoreOverall + AspirationInitialWindow),
+                        AspirationInitialWindow
+
+                let bestMoveThisIter, bestScoreThisIter =
+                    searchWithAspiration initialAlpha initialBeta initialWindow
 
                 match bestMoveThisIter with
                 | ValueSome bm when not abortSearch ->

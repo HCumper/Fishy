@@ -5,6 +5,8 @@ open Types
 open Fen
 open BoardHelpers
 open GenerateMoves
+open MakeMove
+open Zobrist
 open Attacks
 open NUnit.Framework
 
@@ -36,6 +38,35 @@ let private withPosition (fen: string) (testName: string) (action: Position -> u
     match initBoardFromFen fen with
     | ValueSome pos -> action pos
     | ValueNone -> Assert.Fail($"FEN parse failed: {testName}")
+
+let private assertHashConsistent (context: string) (pos: Position) =
+    let recomputed = hashPosition pos.Board pos.State
+    Assert.That(pos.State.HashKey, Is.EqualTo(recomputed), context)
+
+let rec private perftWithHashChecks (pos: Position) (depth: int) : uint64 =
+    assertHashConsistent $"before depth {depth}" pos
+
+    if depth = 0 then
+        1UL
+    else
+        let beforeHash = pos.State.HashKey
+        let moves = generateAllLegalMoves pos inCheck
+
+        moves
+        |> List.sumBy (fun mv ->
+            let mutable p = pos
+            let undo = makeMove &p mv
+
+            assertHashConsistent $"after make depth {depth} move {mv}" p
+
+            let nodes = perftWithHashChecks p (depth - 1)
+
+            unmakeMove &p mv undo
+
+            Assert.That(p.State.HashKey, Is.EqualTo(beforeHash), $"hash not restored after move {mv} at depth {depth}")
+            assertHashConsistent $"after unmake depth {depth} move {mv}" p
+
+            nodes)
 
 // ============================================================================
 // Test Case Types
@@ -656,3 +687,12 @@ let ``Perft standard positions to depth 4`` () =
         ]
 
     cases |> List.iter runCase
+
+[<Test>]
+let ``Perft preserves hash consistency through recursive make and unmake`` () =
+    withPosition
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        "hash checked perft position"
+        (fun pos ->
+            let got = perftWithHashChecks pos 2
+            Assert.That(got, Is.EqualTo(400UL)))

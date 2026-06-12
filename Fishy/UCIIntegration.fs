@@ -25,6 +25,9 @@ let tt =
 let mutable private current : Position option = None
 let mutable private stopFlag = false
 
+let internal currentPositionForTests () =
+    current
+
 let waitForDebuggerIfRequested () =
     match Environment.GetEnvironmentVariable("WAIT_FOR_DEBUGGER") with
     | "1" ->
@@ -41,6 +44,8 @@ let private loadFen (fen:string) : Position option =
 let private newGame () =
     stopFlag <- false
     current <- None
+    TranspositionTable.clear tt
+    TranspositionTable.resetStats()
 
 let private applyUciMoves (basePos:Position) (moves:string list) : Position option =
     let mutable p = basePos
@@ -112,7 +117,9 @@ let private setPosition (commandLine: string) (_moves: string list) =
             current <- applyUciMovesFromStartPos moveList
 
     // UCI "position fen <6 fields> [moves ...]"
-    | "position" :: "fen" :: rest ->
+    | "position" :: "fen" :: _ ->
+        let rest = toks |> List.skip 2
+
         // rest begins with 6 FEN fields (placement stm castling ep half full)
         if List.length rest < 6 then
             current <- None

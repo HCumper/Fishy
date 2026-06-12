@@ -44,7 +44,8 @@ let private tryParseEPSquare (s: string) : ValueOption<ValueOption<Coordinates>>
             | _ -> -1
 
         match BoardHelpers.Coordinates.tryCreate file rank with
-        | ValueSome c -> ValueSome (ValueSome c)
+        | ValueSome c when rank = 2 || rank = 5 -> ValueSome (ValueSome c)
+        | ValueSome _ -> ValueNone
         | ValueNone -> ValueNone
     else
         ValueNone
@@ -68,8 +69,14 @@ let private tryParsePlacement (placement: string) (board: Board) : ValueOption<K
     let mutable ok = true
 
     let inline recordKing (p:sbyte) (f:int) (r:int) =
-        if p = 6y then wkOpt <- ValueSome { File = byte f; Rank = byte r }
-        elif p = -6y then bkOpt <- ValueSome { File = byte f; Rank = byte r }
+        if p = 6y then
+            match wkOpt with
+            | ValueNone -> wkOpt <- ValueSome { File = byte f; Rank = byte r }
+            | ValueSome _ -> ok <- false
+        elif p = -6y then
+            match bkOpt with
+            | ValueNone -> bkOpt <- ValueSome { File = byte f; Rank = byte r }
+            | ValueSome _ -> ok <- false
 
     for ch in placement do
         if ok then

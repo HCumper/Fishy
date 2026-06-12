@@ -14,6 +14,9 @@
         <Compile Include="MoveGenerationTests.fs" />
         <Compile Include="EvaluationTests.fs" />
         <Compile Include="Board1DTestHelpers.fs" />
+        <Compile Include="UCIIntegrationTests.fs" />
+        <Compile Include="SearchTacticsTests.fs" />
+        <Compile Include="SearchQuiescenceTests.fs" />
         <Compile Include="SearchOrderingTests.fs" />
         <Compile Include="SearchTTTests.fs" />
         <Compile Include="ZobristTests.fs" />
